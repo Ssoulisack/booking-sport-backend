@@ -84,7 +84,7 @@ func (r *businessRepository) List(ctx context.Context, q output.ListQuery) ([]do
 	tx := r.db.WithContext(ctx).Model(&domain.Business{})
 	if q.Keyword != "" {
 		like := "%" + q.Keyword + "%"
-		tx = tx.Where("name ILIKE ? OR slug ILIKE ?", like, like)
+		tx = tx.Where("(name ILIKE ? OR slug ILIKE ?)", like, like)
 	}
 	tx = applyFilters(tx, q.Filters)
 	var total int64

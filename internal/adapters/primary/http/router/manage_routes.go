@@ -19,6 +19,8 @@ func SetupManageRoutes(
 	rules handler.RuleHandler,
 	media handler.MediaHandler,
 	business handler.BusinessHandler,
+	desk handler.DeskHandler,
+	reports handler.ReportHandler,
 ) {
 	staff := auth.Business(domain.MemberStaff)
 	manager := auth.Business(domain.MemberManager)
@@ -92,4 +94,20 @@ func SetupManageRoutes(
 
 	b.Post("/uploads", manager, media.Upload)
 	b.Delete("/uploads", manager, media.Delete)
+
+	// booking desk: the whole team
+	b.Get("/bookings", staff, desk.ListBookings)
+	b.Get("/bookings/:id", staff, desk.GetBooking)
+	b.Post("/bookings", staff, desk.CreateBooking)
+	b.Post("/bookings/:id/status", staff, desk.ChangeStatus)
+	b.Post("/bookings/:id/payment", staff, desk.SetPayment)
+	b.Get("/calendar", staff, desk.Calendar)
+	b.Get("/customers", staff, desk.Customers)
+
+	// reports and finance: managers and the owner; the daily cash-up also staff (to close the till)
+	b.Get("/reports/cash-up", staff, reports.CashUp)
+	b.Get("/reports/bookings", manager, reports.Bookings)
+	b.Get("/reports/utilisation", manager, reports.Utilisation)
+	b.Get("/reports/finance", manager, reports.Finance)
+	b.Get("/reports/unpaid", manager, reports.Unpaid)
 }

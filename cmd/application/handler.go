@@ -21,6 +21,8 @@ type AppHandler struct {
 	rules          handler.RuleHandler
 	media          handler.MediaHandler
 	booking        handler.BookingHandler
+	desk           handler.DeskHandler
+	reports        handler.ReportHandler
 }
 
 func SetupHandlers(svc *AppServices) *AppHandler {
@@ -39,5 +41,7 @@ func SetupHandlers(svc *AppServices) *AppHandler {
 		rules:          handler.NewRuleHandler(svc.rules),
 		media:          handler.NewMediaHandler(svc.media),
 		booking:        handler.NewBookingHandler(svc.booking),
+		desk:           handler.NewDeskHandler(svc.desk),
+		reports:        handler.NewReportHandler(svc.reports),
 	}
 }

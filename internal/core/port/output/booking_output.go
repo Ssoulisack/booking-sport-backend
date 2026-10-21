@@ -30,4 +30,41 @@ type BookingRepository interface {
 	SeatsTaken(ctx context.Context, businessID uint, classIDs []uint) (map[uint]int, error)
 	// CountFutureForOwner counts active customer items of a resource or coach ending after now
 	CountFutureForOwner(ctx context.Context, businessID uint, ownerType string, ownerID uint, now time.Time) (int64, error)
+
+	// ---- business dashboard ----
+
+	// List filters a business's bookings, soonest start first
+	List(ctx context.Context, businessID uint, f BookingFilter, q ListQuery) ([]domain.Booking, int64, error)
+	// InRange returns every booking of any status overlapping [from, to), with items and people loaded
+	InRange(ctx context.Context, businessID uint, from, to time.Time) ([]domain.Booking, error)
+	// PaidBetween returns bookings marked paid in [from, to), with who took the payment
+	PaidBetween(ctx context.Context, businessID uint, from, to time.Time) ([]domain.Booking, error)
+	// SetStatus changes the status of a booking that keeps its time (confirm, complete, no-show)
+	SetStatus(ctx context.Context, b *domain.Booking, status string) error
+	// SetPayment saves the payment fields
+	SetPayment(ctx context.Context, b *domain.Booking) error
+	// Customers lists accounts that booked with the business, with their booking counts
+	Customers(ctx context.Context, businessID uint, keyword string, q ListQuery) ([]CustomerRow, int64, error)
+}
+
+// BookingFilter narrows a business's booking list; zero values do not filter
+type BookingFilter struct {
+	From, To      *time.Time // bookings overlapping [From, To)
+	SportID       uint
+	ResourceID    uint
+	CoachID       uint
+	CustomerID    uint
+	Status        string
+	PaymentStatus string
+	Keyword       string // code, guest name or phone, customer name or email
+}
+
+// CustomerRow is one customer of a business
+type CustomerRow struct {
+	UserID        uint
+	Name          string
+	Email         string
+	Phone         string
+	Bookings      int64
+	LastBookingAt time.Time
 }

@@ -25,7 +25,7 @@ func (r *bookingRepository) Create(ctx context.Context, b *domain.Booking) error
 	if b.BusinessID == 0 {
 		return errNoScope
 	}
-	return exception.HandleGormError(r.db.WithContext(ctx).Omit("Business").Create(b).Error)
+	return exception.HandleGormError(r.db.WithContext(ctx).Omit("Business", "Customer", "PaidBy").Create(b).Error)
 }
 
 func (r *bookingRepository) CreateClassBooking(ctx context.Context, b *domain.Booking, classID uint, seats int) error {
@@ -48,13 +48,13 @@ func (r *bookingRepository) CreateClassBooking(ctx context.Context, b *domain.Bo
 		if taken+int64(seats) > int64(class.Capacity) {
 			return response.NewError(http.StatusConflict, "CLASS_FULL")
 		}
-		return tx.Omit("Business").Create(b).Error
+		return tx.Omit("Business", "Customer", "PaidBy").Create(b).Error
 	})
 	return keepAppError(err)
 }
 
 func (r *bookingRepository) withDetails(ctx context.Context) *gorm.DB {
-	return r.db.WithContext(ctx).Preload("Items").Preload("Business")
+	return r.db.WithContext(ctx).Preload("Items").Preload("Business").Preload("Customer").Preload("PaidBy")
 }
 
 func (r *bookingRepository) GetByID(ctx context.Context, businessID, id uint) (*domain.Booking, error) {
@@ -209,4 +209,122 @@ func (r *closureRepository) Overlapping(ctx context.Context, businessID uint, fr
 	var items []domain.Closure
 	err = tx.Where("starts_at < ? AND ends_at > ?", to, from).Find(&items).Error
 	return items, exception.HandleGormError(err)
+}
+
+// ---------- business dashboard ----------
+
+func (r *bookingRepository) filtered(ctx context.Context, businessID uint, f output.BookingFilter) *gorm.DB {
+	tx := r.db.WithContext(ctx).Model(&domain.Booking{}).Where("bookings.business_id = ?", businessID)
+	if f.From != nil {
+		tx = tx.Where("bookings.ends_at > ?", *f.From)
+	}
+	if f.To != nil {
+		tx = tx.Where("bookings.starts_at < ?", *f.To)
+	}
+	if f.SportID != 0 {
+		tx = tx.Where("bookings.sport_id = ?", f.SportID)
+	}
+	if f.CustomerID != 0 {
+		tx = tx.Where("bookings.customer_id = ?", f.CustomerID)
+	}
+	if f.Status != "" {
+		tx = tx.Where("bookings.status = ?", f.Status)
+	}
+	if f.PaymentStatus != "" {
+		tx = tx.Where("bookings.payment_status = ?", f.PaymentStatus)
+	}
+	if f.ResourceID != 0 {
+		tx = tx.Where("bookings.id IN (SELECT booking_id FROM booking_items WHERE resource_id = ?)", f.ResourceID)
+	}
+	if f.CoachID != 0 {
+		tx = tx.Where("bookings.id IN (SELECT booking_id FROM booking_items WHERE coach_id = ?)", f.CoachID)
+	}
+	if f.Keyword != "" {
+		like := "%" + f.Keyword + "%"
+		tx = tx.Where("(bookings.code ILIKE ? OR bookings.guest_name ILIKE ? OR bookings.guest_phone LIKE ? OR "+
+			"bookings.customer_id IN (SELECT id FROM users WHERE name ILIKE ? OR email ILIKE ?))", like, like, like, like, like)
+	}
+	return tx
+}
+
+func (r *bookingRepository) List(ctx context.Context, businessID uint, f output.BookingFilter, q output.ListQuery) ([]domain.Booking, int64, error) {
+	if businessID == 0 {
+		return nil, 0, errNoScope
+	}
+	tx := r.filtered(ctx, businessID, f)
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		return nil, 0, exception.HandleGormError(err)
+	}
+	var items []domain.Booking
+	err := paginate(tx.Preload("Items").Preload("Customer").Preload("PaidBy").Order("bookings.starts_at ASC, bookings.id ASC"), q).
+		Find(&items).Error
+	return items, total, exception.HandleGormError(err)
+}
+
+func (r *bookingRepository) InRange(ctx context.Context, businessID uint, from, to time.Time) ([]domain.Booking, error) {
+	if businessID == 0 {
+		return nil, errNoScope
+	}
+	var items []domain.Booking
+	err := r.filtered(ctx, businessID, output.BookingFilter{From: &from, To: &to}).
+		Preload("Items").Preload("Customer").Preload("PaidBy").Order("bookings.starts_at ASC").Find(&items).Error
+	return items, exception.HandleGormError(err)
+}
+
+func (r *bookingRepository) PaidBetween(ctx context.Context, businessID uint, from, to time.Time) ([]domain.Booking, error) {
+	if businessID == 0 {
+		return nil, errNoScope
+	}
+	var items []domain.Booking
+	err := r.db.WithContext(ctx).Preload("Customer").Preload("PaidBy").
+		Where("business_id = ? AND payment_status = ? AND paid_at >= ? AND paid_at < ?", businessID, domain.PaymentPaid, from, to).
+		Order("paid_at ASC").Find(&items).Error
+	return items, exception.HandleGormError(err)
+}
+
+func (r *bookingRepository) SetStatus(ctx context.Context, b *domain.Booking, status string) error {
+	// the WHERE on the old status makes two staff clicking at once safe: only one change applies
+	res := r.db.WithContext(ctx).Model(&domain.Booking{}).
+		Where("id = ? AND business_id = ? AND status = ?", b.ID, b.BusinessID, b.Status).Update("status", status)
+	if res.Error != nil {
+		return exception.HandleGormError(res.Error)
+	}
+	if res.RowsAffected != 1 {
+		return response.NewError(http.StatusConflict, "BOOKING_CHANGED_MEANWHILE")
+	}
+	b.Status = status
+	return nil
+}
+
+func (r *bookingRepository) SetPayment(ctx context.Context, b *domain.Booking) error {
+	return requireAffected(r.db.WithContext(ctx).Model(&domain.Booking{}).
+		Where("id = ? AND business_id = ?", b.ID, b.BusinessID).
+		Updates(map[string]any{
+			"payment_status": b.PaymentStatus, "payment_method": b.PaymentMethod,
+			"paid_at": b.PaidAt, "paid_by_id": b.PaidByID,
+		}))
+}
+
+func (r *bookingRepository) Customers(ctx context.Context, businessID uint, keyword string, q output.ListQuery) ([]output.CustomerRow, int64, error) {
+	if businessID == 0 {
+		return nil, 0, errNoScope
+	}
+	tx := r.db.WithContext(ctx).Table("bookings").
+		Joins("JOIN users ON users.id = bookings.customer_id").
+		Where("bookings.business_id = ? AND bookings.deleted_at IS NULL", businessID)
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		tx = tx.Where("(users.name ILIKE ? OR users.email ILIKE ? OR users.phone LIKE ?)", like, like, like)
+	}
+	var total int64
+	if err := tx.Distinct("users.id").Count(&total).Error; err != nil {
+		return nil, 0, exception.HandleGormError(err)
+	}
+	var rows []output.CustomerRow
+	err := paginate(tx.Select(`users.id AS user_id, users.name, users.email, users.phone,
+			COUNT(bookings.id) AS bookings, MAX(bookings.starts_at) AS last_booking_at`).
+		Group("users.id, users.name, users.email, users.phone").Order("MAX(bookings.starts_at) DESC"), q).
+		Scan(&rows).Error
+	return rows, total, exception.HandleGormError(err)
 }

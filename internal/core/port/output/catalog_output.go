@@ -28,6 +28,8 @@ type ClassSessionRepository interface {
 	CountStartingBetween(ctx context.Context, businessID uint, from, to time.Time) (int64, error)
 	// ListUpcoming lists active sessions starting at or after from, soonest first
 	ListUpcoming(ctx context.Context, businessID uint, from time.Time, q ListQuery) ([]domain.ClassSession, int64, error)
+	// ListBetween lists sessions (active or not) overlapping [from, to)
+	ListBetween(ctx context.Context, businessID uint, from, to time.Time) ([]domain.ClassSession, error)
 }
 
 // OpeningHourRepository replaces the whole weekly schedule of an owner in one transaction

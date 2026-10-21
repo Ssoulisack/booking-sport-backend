@@ -146,3 +146,13 @@ func (r *classSessionRepository) Delete(ctx context.Context, businessID, id uint
 		return tx.Where("class_session_id = ? AND kind = ?", id, domain.ItemClassHold).Delete(&domain.BookingItem{}).Error
 	}))
 }
+
+func (r *classSessionRepository) ListBetween(ctx context.Context, businessID uint, from, to time.Time) ([]domain.ClassSession, error) {
+	tx, err := r.scope(ctx, businessID)
+	if err != nil {
+		return nil, err
+	}
+	var items []domain.ClassSession
+	err = tx.Where("starts_at < ? AND ends_at > ?", to, from).Order("starts_at ASC").Find(&items).Error
+	return items, exception.HandleGormError(err)
+}

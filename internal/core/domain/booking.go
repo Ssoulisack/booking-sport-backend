@@ -31,7 +31,32 @@ const (
 	CreatedByStaff    = "staff"
 )
 
-const PaymentUnpaid = "unpaid"
+// Payment status and the ways a business can be paid at the venue
+const (
+	PaymentUnpaid = "unpaid"
+	PaymentPaid   = "paid"
+
+	MethodCash     = "cash"
+	MethodTransfer = "transfer"
+	MethodQR       = "qr"
+	MethodOther    = "other"
+)
+
+// statusChanges lists the allowed one-way moves; cancelled, completed and no-show are final
+var statusChanges = map[string][]string{
+	BookingPending:   {BookingConfirmed, BookingCancelled},
+	BookingConfirmed: {BookingCancelled, BookingCompleted, BookingNoShow},
+}
+
+// CanChangeStatus tells whether a booking may move from one status to another
+func CanChangeStatus(from, to string) bool {
+	for _, s := range statusChanges[from] {
+		if s == to {
+			return true
+		}
+	}
+	return false
+}
 
 // Booking is one customer's or guest's reservation at a business
 type Booking struct {
@@ -39,22 +64,29 @@ type Booking struct {
 	BusinessID uint     `gorm:"not null;index"`
 	Business   Business `gorm:"foreignKey:BusinessID"`
 	Code       string   `gorm:"type:varchar(12);not null;uniqueIndex"` // short reference shown to people
+	SportID    uint     `gorm:"not null;default:0;index"`
 
 	CustomerID     *uint  `gorm:"index"` // nil for guests
+	Customer       *User  `gorm:"foreignKey:CustomerID"`
 	GuestName      string `gorm:"type:varchar(120)"`
 	GuestPhone     string `gorm:"type:varchar(30);index"`
 	GuestEmail     string `gorm:"type:varchar(255)"`
 	GuestTokenHash string `gorm:"type:varchar(64);index"` // private link for guests; only the hash is stored
 
-	Status           string    `gorm:"type:varchar(12);not null;index"`
-	StartsAt         time.Time `gorm:"not null;index"`
-	EndsAt           time.Time `gorm:"not null"`
-	TotalPrice       int64     `gorm:"not null"`
-	Currency         string    `gorm:"type:varchar(3);not null"`
-	PaymentStatus    string    `gorm:"type:varchar(12);not null;default:unpaid"`
+	Status           string     `gorm:"type:varchar(12);not null;index"`
+	StartsAt         time.Time  `gorm:"not null;index"`
+	EndsAt           time.Time  `gorm:"not null"`
+	TotalPrice       int64      `gorm:"not null"`
+	Currency         string     `gorm:"type:varchar(3);not null"`
+	PaymentStatus    string     `gorm:"type:varchar(12);not null;default:unpaid"`
+	PaymentMethod    string     `gorm:"type:varchar(10)"`
+	PaidAt           *time.Time `gorm:"index"`
+	PaidByID         *uint
+	PaidBy           *User     `gorm:"foreignKey:PaidByID"`
 	CancellableUntil time.Time `gorm:"not null"` // rule snapshot: later rule changes do not affect this booking
 	Notes            string    `gorm:"type:text"`
 	CreatedByType    string    `gorm:"type:varchar(10);not null"`
+	CreatedByID      *uint     // the member who made a staff booking
 	CancelledAt      *time.Time
 	CancelReason     string `gorm:"type:varchar(255)"`
 

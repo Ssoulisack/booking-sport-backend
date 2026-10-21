@@ -64,6 +64,7 @@ type BookingItemDTO struct {
 type BookingDTO struct {
 	ID               uint             `json:"id"`
 	Code             string           `json:"code"`
+	SportID          uint             `json:"sport_id"`
 	BusinessName     string           `json:"business_name"`
 	BusinessSlug     string           `json:"business_slug"`
 	Status           string           `json:"status"`
@@ -73,7 +74,14 @@ type BookingDTO struct {
 	Currency         string           `json:"currency"`
 	PaymentStatus    string           `json:"payment_status"`
 	CancellableUntil time.Time        `json:"cancellable_until"`
+	CustomerID       *uint            `json:"customer_id,omitempty"`
+	CustomerName     string           `json:"customer_name,omitempty"`
+	CustomerEmail    string           `json:"customer_email,omitempty"`
 	GuestName        string           `json:"guest_name,omitempty"`
+	GuestPhone       string           `json:"guest_phone,omitempty"`
+	PaymentMethod    string           `json:"payment_method,omitempty"`
+	PaidAt           *time.Time       `json:"paid_at,omitempty"`
+	CreatedByType    string           `json:"created_by"`
 	Notes            string           `json:"notes"`
 	CancelledAt      *time.Time       `json:"cancelled_at,omitempty"`
 	CancelReason     string           `json:"cancel_reason,omitempty"`
@@ -86,4 +94,79 @@ type CreatedBookingDTO struct {
 	BookingDTO
 	GuestToken string `json:"guest_token,omitempty"`
 	GuestLink  string `json:"guest_link,omitempty"`
+}
+
+// ---------- business dashboard ----------
+
+// BookingQuery filters the dashboard's booking list; from / to are dates (YYYY-MM-DD, business timezone)
+type BookingQuery struct {
+	Page          int    `query:"page"`
+	Limit         int    `query:"limit"`
+	Keyword       string `query:"keyword"`
+	From          string `query:"from"`
+	To            string `query:"to"`
+	SportID       uint   `query:"sport_id"`
+	ResourceID    uint   `query:"resource_id"`
+	CoachID       uint   `query:"coach_id"`
+	CustomerID    uint   `query:"customer_id"`
+	Status        string `query:"status"`
+	PaymentStatus string `query:"payment_status"`
+}
+
+// StaffBookingRequest is a booking made by a member: for an existing customer (customer_email)
+// or for a walk-in (guest: name + phone)
+type StaffBookingRequest struct {
+	CreateBookingRequest
+	CustomerEmail string `json:"customer_email"`
+}
+
+type StatusChangeRequest struct {
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+// PaymentRequest marks a booking paid (with a method) or unpaid
+type PaymentRequest struct {
+	Status string `json:"status"`
+	Method string `json:"method"`
+}
+
+// CalendarEntry is one block on a court's or coach's line: a booking, a class or a closure
+type CalendarEntry struct {
+	Kind       string    `json:"kind"` // booking, class, closure
+	StartsAt   time.Time `json:"starts_at"`
+	EndsAt     time.Time `json:"ends_at"`
+	BookingID  uint      `json:"booking_id,omitempty"`
+	Code       string    `json:"code,omitempty"`
+	Status     string    `json:"status,omitempty"`
+	Name       string    `json:"name,omitempty"` // customer or walk-in
+	Paid       bool      `json:"paid,omitempty"`
+	ClassID    uint      `json:"class_id,omitempty"`
+	Title      string    `json:"title,omitempty"`
+	SeatsTaken int       `json:"seats_taken,omitempty"`
+	Capacity   int       `json:"capacity,omitempty"`
+	Reason     string    `json:"reason,omitempty"`
+}
+
+type CalendarLane struct {
+	OwnerType string          `json:"owner_type"`
+	OwnerID   uint            `json:"owner_id"`
+	Name      string          `json:"name"`
+	Entries   []CalendarEntry `json:"entries"`
+}
+
+type CalendarDTO struct {
+	From     time.Time      `json:"from"`
+	To       time.Time      `json:"to"`
+	Timezone string         `json:"timezone"`
+	Lanes    []CalendarLane `json:"lanes"`
+}
+
+type CustomerDTO struct {
+	UserID        uint      `json:"user_id"`
+	Name          string    `json:"name"`
+	Email         string    `json:"email"`
+	Phone         string    `json:"phone"`
+	Bookings      int64     `json:"bookings"`
+	LastBookingAt time.Time `json:"last_booking_at"`
 }

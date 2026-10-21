@@ -19,6 +19,8 @@ type AppServices struct {
 	rules       input.RuleService
 	media       input.MediaService
 	booking     input.BookingService
+	desk        input.DeskService
+	reports     input.ReportService
 }
 
 // setupServices initializes all core business logic services
@@ -26,6 +28,10 @@ func SetupServices(repos *AppRepositories) *AppServices {
 	r := repos
 	limits := services.NewLimits(r.businesses, r.sports, r.resources, r.coaches, r.classSessions, r.memberships, r.invitations, r.media)
 	rules := services.NewRuleService(r.rules, r.sports, r.resources)
+	booking := services.NewBookingService(
+		r.businesses, r.sports, r.resources, r.coaches, r.openingHours, r.closures, r.prices, r.classSessions,
+		r.bookings, r.user, rules, r.mailer, r.app.FrontendURL,
+	)
 	return &AppServices{
 		user:        services.NewUserService(r.user, r.redis, r.minio),
 		auth:        services.NewAuthService(r.user, r.redis, r.memberships, r.passwordResets, r.mailer, r.app.FrontendURL),
@@ -41,11 +47,10 @@ func SetupServices(repos *AppRepositories) *AppServices {
 		schedule: services.NewScheduleService(
 			r.openingHours, r.closures, r.prices, r.classSessions, r.sports, r.resources, r.coaches, r.bookings, limits,
 		),
-		rules: rules,
-		media: services.NewMediaService(r.storage, r.media, limits),
-		booking: services.NewBookingService(
-			r.businesses, r.sports, r.resources, r.coaches, r.openingHours, r.closures, r.prices, r.classSessions,
-			r.bookings, rules, r.mailer, r.app.FrontendURL,
-		),
+		rules:   rules,
+		media:   services.NewMediaService(r.storage, r.media, limits),
+		booking: booking,
+		desk:    booking.(input.DeskService), // the same service: staff bookings share the customer checks
+		reports: services.NewReportService(r.businesses, r.bookings, r.resources, r.sports, r.openingHours, r.closures),
 	}
 }

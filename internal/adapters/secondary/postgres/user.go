@@ -46,7 +46,7 @@ func (r *userRepository) List(ctx context.Context, q output.ListQuery) ([]domain
 	tx := r.db.WithContext(ctx).Model(&domain.User{})
 	if q.Keyword != "" {
 		like := "%" + q.Keyword + "%"
-		tx = tx.Where("name ILIKE ? OR email ILIKE ?", like, like)
+		tx = tx.Where("(name ILIKE ? OR email ILIKE ?)", like, like)
 	}
 	for column, value := range q.Filters {
 		tx = tx.Where(column+" = ?", value)

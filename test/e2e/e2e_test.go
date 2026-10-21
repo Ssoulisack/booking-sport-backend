@@ -425,3 +425,19 @@ func num(s string) int {
 	}
 	return n
 }
+
+// raw returns the response body as text (for CSV downloads)
+func (a api) raw(method, path, token string) string {
+	a.t.Helper()
+	req := httptest.NewRequest(method, "/api/v1"+path, nil)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res, err := a.app.Test(req, -1)
+	if err != nil {
+		a.t.Fatalf("%s %s: %v", method, path, err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return string(b)
+}

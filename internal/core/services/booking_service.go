@@ -33,6 +33,7 @@ type BookingServiceImpl struct {
 	prices      output.PriceRepository
 	classes     output.ClassSessionRepository
 	bookings    output.BookingRepository
+	users       output.UserRepository
 	rules       input.RuleService
 	mailer      output.Mailer
 	frontendURL string
@@ -49,13 +50,14 @@ func NewBookingService(
 	prices output.PriceRepository,
 	classes output.ClassSessionRepository,
 	bookings output.BookingRepository,
+	users output.UserRepository,
 	rules input.RuleService,
 	mailer output.Mailer,
 	frontendURL string,
 ) input.BookingService {
 	return &BookingServiceImpl{
 		businesses: businesses, sports: sports, resources: resources, coaches: coaches, hours: hours,
-		closures: closures, prices: prices, classes: classes, bookings: bookings, rules: rules,
+		closures: closures, prices: prices, classes: classes, bookings: bookings, users: users, rules: rules,
 		mailer: mailer, frontendURL: strings.TrimRight(frontendURL, "/"), now: time.Now,
 	}
 }
@@ -147,6 +149,11 @@ func (s *BookingServiceImpl) openIntervals(ctx context.Context, businessID uint,
 	if err != nil {
 		return nil, err
 	}
+	return openIntervalsOn(rows, day), nil
+}
+
+// openIntervalsOn turns weekly hours into concrete intervals on day (midnight in the business timezone)
+func openIntervalsOn(rows []domain.OpeningHour, day time.Time) []domain.Interval {
 	var out []domain.Interval
 	for _, h := range rows {
 		if h.Weekday != int(day.Weekday()) {
@@ -162,7 +169,7 @@ func (s *BookingServiceImpl) openIntervals(ctx context.Context, businessID uint,
 			End:   day.Add(time.Duration(closeAt) * time.Minute),
 		})
 	}
-	return out, nil
+	return out
 }
 
 // busyIntervals collects the owner's active bookings and class holds on [from, to)
@@ -178,7 +185,7 @@ func (s *BookingServiceImpl) busyIntervals(ctx context.Context, businessID uint,
 
 // slotsFor computes every bookable start on day for the target. It is the single definition
 // of "free", used both to show availability and to accept a booking.
-func (s *BookingServiceImpl) slotsFor(ctx context.Context, b *domain.Business, t *target, day time.Time) ([]domain.Slot, *domain.EffectiveRule, error) {
+func (s *BookingServiceImpl) slotsFor(ctx context.Context, b *domain.Business, t *target, day time.Time, staff bool) ([]domain.Slot, *domain.EffectiveRule, error) {
 	rule, err := s.rules.Effective(ctx, b.ID, t.sportID, t.resourceID())
 	if err != nil {
 		return nil, nil, err
@@ -230,6 +237,9 @@ func (s *BookingServiceImpl) slotsFor(ctx context.Context, b *domain.Business, t
 		Earliest: now.Add(time.Duration(rule.MinNoticeMin) * time.Minute),
 		Latest:   startOfDay(now, day.Location()).AddDate(0, 0, rule.MaxDaysAhead+1),
 	}
+	if staff { // staff skip notice and days ahead, but never book a day that is over
+		window = domain.SlotWindow{Earliest: startOfDay(now, day.Location()), Latest: now.AddDate(1, 0, 1)}
+	}
 	return domain.FreeSlots(open, busy, *rule, window), rule, nil
 }
 
@@ -253,7 +263,7 @@ func (s *BookingServiceImpl) Availability(ctx context.Context, slug string, q dt
 	if err != nil {
 		return nil, err
 	}
-	slots, rule, err := s.slotsFor(ctx, b, t, day)
+	slots, rule, err := s.slotsFor(ctx, b, t, day, false)
 	if err != nil {
 		return nil, err
 	}
@@ -271,6 +281,7 @@ func (s *BookingServiceImpl) Availability(ctx context.Context, slug string, q dt
 type booker struct {
 	customer *domain.User
 	guest    *dto.GuestInfo
+	staff    *domain.User // set when a member books on their behalf
 }
 
 // whoBooks applies the business's booking mode
@@ -326,8 +337,11 @@ func cleanGuest(g dto.GuestInfo) (*dto.GuestInfo, error) {
 	return &g, nil
 }
 
-// checkBookingLimit applies the per-customer rule (by account, or by phone for guests)
+// checkBookingLimit applies the per-customer rule (by account, or by phone for guests); staff bookings skip it
 func (s *BookingServiceImpl) checkBookingLimit(ctx context.Context, businessID uint, who *booker, rule *domain.EffectiveRule) error {
+	if who.staff != nil {
+		return nil
+	}
 	var active int64
 	var err error
 	if who.customer != nil {
@@ -356,25 +370,29 @@ func newBookingCode() (string, error) {
 }
 
 // newBooking fills in what every booking has: who, status, code, cancel deadline, guest token
-func (s *BookingServiceImpl) newBooking(b *domain.Business, who *booker, start, end time.Time, rule *domain.EffectiveRule, notes string) (*domain.Booking, string, error) {
+// Staff bookings are confirmed at once and walk-ins get no private link (staff handle them).
+func (s *BookingServiceImpl) newBooking(b *domain.Business, who *booker, sportID uint, start, end time.Time, rule *domain.EffectiveRule, notes string) (*domain.Booking, string, error) {
 	code, err := newBookingCode()
 	if err != nil {
 		return nil, "", err
 	}
 	status := domain.BookingConfirmed
-	if b.RequireApproval {
+	if b.RequireApproval && who.staff == nil {
 		status = domain.BookingPending
 	}
 	bk := &domain.Booking{
-		BusinessID: b.ID, Code: code, Status: status, StartsAt: start, EndsAt: end,
+		BusinessID: b.ID, Code: code, SportID: sportID, Status: status, StartsAt: start, EndsAt: end,
 		PaymentStatus: domain.PaymentUnpaid, Notes: strings.TrimSpace(notes),
 		CancellableUntil: start.Add(-time.Duration(rule.CancelBeforeHours) * time.Hour),
 	}
 	var rawToken string
-	if who.customer != nil {
+	switch {
+	case who.customer != nil:
 		id := who.customer.ID
 		bk.CustomerID, bk.CreatedByType = &id, domain.CreatedByCustomer
-	} else {
+	case who.staff != nil: // walk-in
+		bk.GuestName, bk.GuestPhone, bk.GuestEmail = who.guest.Name, who.guest.Phone, who.guest.Email
+	default:
 		raw, hash, err := newToken()
 		if err != nil {
 			return nil, "", err
@@ -382,6 +400,10 @@ func (s *BookingServiceImpl) newBooking(b *domain.Business, who *booker, start, 
 		rawToken = raw
 		bk.GuestName, bk.GuestPhone, bk.GuestEmail = who.guest.Name, who.guest.Phone, who.guest.Email
 		bk.GuestTokenHash, bk.CreatedByType = hash, domain.CreatedByGuest
+	}
+	if who.staff != nil {
+		staffID := who.staff.ID
+		bk.CreatedByType, bk.CreatedByID = domain.CreatedByStaff, &staffID
 	}
 	return bk, rawToken, nil
 }
@@ -441,7 +463,7 @@ func (s *BookingServiceImpl) createRental(ctx context.Context, b *domain.Busines
 		return nil, "", badRequest("STARTS_AT_REQUIRED")
 	}
 	loc := locationOf(b)
-	slots, rule, err := s.slotsFor(ctx, b, t, startOfDay(req.StartsAt, loc))
+	slots, rule, err := s.slotsFor(ctx, b, t, startOfDay(req.StartsAt, loc), who.staff != nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -495,7 +517,7 @@ func (s *BookingServiceImpl) createRental(ctx context.Context, b *domain.Busines
 		}
 	}
 
-	bk, rawToken, err := s.newBooking(b, who, start, end, rule, req.Notes)
+	bk, rawToken, err := s.newBooking(b, who, t.sportID, start, end, rule, req.Notes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -531,7 +553,10 @@ func (s *BookingServiceImpl) createClassBooking(ctx context.Context, b *domain.B
 	if err != nil {
 		return nil, "", err
 	}
-	if class.StartsAt.Before(s.now().Add(time.Duration(rule.MinNoticeMin) * time.Minute)) {
+	switch {
+	case who.staff != nil && !class.EndsAt.After(s.now()): // staff may add people until the class ends
+		return nil, "", conflict("CLASS_ALREADY_ENDED")
+	case who.staff == nil && class.StartsAt.Before(s.now().Add(time.Duration(rule.MinNoticeMin)*time.Minute)):
 		return nil, "", conflict("CLASS_STARTED_OR_TOO_SOON")
 	}
 	if err := s.checkBookingLimit(ctx, b.ID, who, rule); err != nil {
@@ -540,7 +565,7 @@ func (s *BookingServiceImpl) createClassBooking(ctx context.Context, b *domain.B
 
 	loc := locationOf(b)
 	start, end := class.StartsAt.In(loc), class.EndsAt.In(loc)
-	bk, rawToken, err := s.newBooking(b, who, start, end, rule, req.Notes)
+	bk, rawToken, err := s.newBooking(b, who, class.SportID, start, end, rule, req.Notes)
 	if err != nil {
 		return nil, "", err
 	}
@@ -561,11 +586,13 @@ func (s *BookingServiceImpl) createClassBooking(ctx context.Context, b *domain.B
 // ---------- viewing and cancelling ----------
 
 func toBookingDTO(b domain.Booking) dto.BookingDTO {
-	return dto.BookingDTO{
-		ID: b.ID, Code: b.Code, BusinessName: b.Business.Name, BusinessSlug: b.Business.Slug,
+	d := dto.BookingDTO{
+		ID: b.ID, Code: b.Code, SportID: b.SportID, BusinessName: b.Business.Name, BusinessSlug: b.Business.Slug,
 		Status: b.Status, StartsAt: b.StartsAt, EndsAt: b.EndsAt, TotalPrice: b.TotalPrice, Currency: b.Currency,
 		PaymentStatus: b.PaymentStatus, CancellableUntil: b.CancellableUntil, GuestName: b.GuestName,
-		Notes: b.Notes, CancelledAt: b.CancelledAt, CancelReason: b.CancelReason, CreatedAt: b.CreatedAt,
+		GuestPhone: b.GuestPhone, CustomerID: b.CustomerID, PaymentMethod: b.PaymentMethod, PaidAt: b.PaidAt,
+		CreatedByType: b.CreatedByType,
+		Notes:         b.Notes, CancelledAt: b.CancelledAt, CancelReason: b.CancelReason, CreatedAt: b.CreatedAt,
 		Items: mapSlice(b.Items, func(i domain.BookingItem) dto.BookingItemDTO {
 			return dto.BookingItemDTO{
 				Kind: i.Kind, ResourceID: i.ResourceID, CoachID: i.CoachID, ClassSessionID: i.ClassSessionID,
@@ -573,6 +600,10 @@ func toBookingDTO(b domain.Booking) dto.BookingDTO {
 			}
 		}),
 	}
+	if b.Customer != nil {
+		d.CustomerName, d.CustomerEmail = b.Customer.Name, b.Customer.Email
+	}
+	return d
 }
 
 // cancel applies the customer rules: only active bookings, and only until the cancel deadline
