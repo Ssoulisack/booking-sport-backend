@@ -69,6 +69,10 @@ func LoadConfig() (*Config, error) {
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("❌ failed to unmarshal config: %w", err)
 	}
+	// Postgres settings live under database.postgres, not at the top level
+	if err := viper.UnmarshalKey("database.postgres", &config.Postgres); err != nil {
+		return nil, fmt.Errorf("❌ failed to unmarshal postgres config: %w", err)
+	}
 	MinioGlobal = config.Minio
 	JWTGlobal = config.JWT
 	return &config, nil

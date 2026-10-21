@@ -64,7 +64,7 @@ func AccessToken(ctx *fiber.Ctx) error {
 	if auth == "" {
 		return response.NewErrorErrMsgUnauthorized(ctx)
 	}
-	jwtFromHeader := strings.TrimSpace(auth[7:])
+	jwtFromHeader := bearerToken(auth)
 	verifiedToken, err := jwt.VerifyEncrypted(jwt.HS256, []byte(config.JWTGlobal.Secret), decrypt, []byte(jwtFromHeader))
 	if err != nil {
 		if strings.Contains(err.Error(), "jwt: invalid token signature") {
@@ -109,7 +109,7 @@ func AccessRefreshToken(ctx *fiber.Ctx) error {
 	if auth == "" {
 		return response.NewErrorErrMsgUnauthorized(ctx)
 	}
-	jwtFromHeader := strings.TrimSpace(auth[7:])
+	jwtFromHeader := bearerToken(auth)
 	verifiedToken, err := jwt.VerifyEncrypted(jwt.HS256, []byte(config.JWTGlobal.RefreshSecret), decrypt, []byte(jwtFromHeader))
 	if err != nil {
 		if strings.Contains(err.Error(), "jwt: invalid token signature") {
@@ -151,7 +151,7 @@ func AccessRefreshToken(ctx *fiber.Ctx) error {
 func GetOwnerAccessToken(c *fiber.Ctx) (*ClaimsToken, error) {
 	_, decrypt, _ := jwt.GCM([]byte(config.JWTGlobal.Secret), nil)
 	auth := c.Get("Authorization")
-	jwtFromHeader := strings.TrimSpace(auth[7:])
+	jwtFromHeader := bearerToken(auth)
 	verifiedToken, err := jwt.VerifyEncrypted(jwt.HS256, []byte(config.JWTGlobal.Secret), decrypt, []byte(jwtFromHeader))
 	if err != nil {
 		return nil, err
@@ -170,7 +170,7 @@ func GetOwnerRefresh(c *fiber.Ctx) (*ClaimsToken, error) {
 	if auth == "" {
 		return nil, response.NewErrorErrMsgUnauthorized(c)
 	}
-	jwtFromHeader := strings.TrimSpace(auth[7:])
+	jwtFromHeader := bearerToken(auth)
 
 	verifiedToken, err := jwt.VerifyEncrypted(jwt.HS256, []byte(config.JWTGlobal.RefreshSecret), decrypt, []byte(jwtFromHeader))
 	if err != nil {
@@ -229,4 +229,12 @@ func BytesQuote(b []byte) []byte {
 	copy(dst[1:], b)
 	dst[len(dst)-1] = '"'
 	return dst
+}
+
+// bearerToken strips the "Bearer " prefix; a malformed header yields "" and fails verification
+func bearerToken(auth string) string {
+	if !strings.HasPrefix(auth, "Bearer ") {
+		return ""
+	}
+	return strings.TrimSpace(auth[7:])
 }

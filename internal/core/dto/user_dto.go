@@ -6,7 +6,9 @@ type UserDTO struct {
 	Avatar    string `json:"avatar"`
 	Name      string `json:"name"`
 	Username  string `json:"username"`
-	Password  string `json:"password"`
+	Password  string `json:"password,omitempty"`
+	Phone     string `json:"phone"`
+	RoleID    uint   `json:"role_id"`
 	Status    bool   `json:"status"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`

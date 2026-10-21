@@ -11,11 +11,11 @@ import (
 func DatabaseMigrations(db *gorm.DB) error {
 	// Add all domain and repository models here
 	if err := db.AutoMigrate(
+		&domain.Role{},
 		&domain.User{},
 	); err != nil {
 		return err
 	}
 	log.Println("🌟 GORM database migrations completed successfully 🚀")
-	SetupInitialData(db)
-	return nil
+	return SetupInitialData(db)
 }

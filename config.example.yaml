@@ -1,0 +1,40 @@
+# Copy to config.yaml and fill in real values (config.yaml is git-ignored)
+server:
+  port: 3000
+  readTimeout: 10
+  writeTimeout: 10
+
+database:
+  postgres:
+    host: localhost
+    port: 5432
+    user: booking
+    password: change-me
+    dbname: booking
+    sslmode: disable
+    timezone: Asia/Bangkok
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+# secret and refreshSecret must each be exactly 32 characters (AES-256 key)
+jwt:
+  secret: change-me-access-secret-32-chars
+  refreshSecret: change-me-refresh-secret-32-char
+
+minio:
+  endpoint: localhost:9000
+  accessKey: change-me
+  secretKey: change-me
+  bucketName: booking
+  baseUrl: http://localhost:9000
+
+mailer:
+  host: smtp.example.com
+  username: change-me
+  password: change-me
+  port: 587
+  from: no-reply@example.com

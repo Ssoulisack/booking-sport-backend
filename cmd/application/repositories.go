@@ -3,7 +3,6 @@ package application
 import (
 	"backend/internal/adapters/secondary/mailer"
 	"backend/internal/adapters/secondary/minio"
-	"backend/internal/adapters/secondary/mysql"
 	"backend/internal/adapters/secondary/postgres"
 	"backend/internal/adapters/secondary/redis"
 	"backend/internal/config"
@@ -52,7 +51,7 @@ func SetupRepositories(cfg *config.Config) *AppRepositories {
 	mailerRepo := mailer.NewMailerRepository(cfg.Mailer)
 
 	// Domain repositories
-	userRepo := mysql.NewUserRepository(postgresRepo.GetDB())
+	userRepo := postgres.NewUserRepository(postgresRepo.GetDB())
 
 	return &AppRepositories{
 		// mysql:  mysqlRepo,
