@@ -28,3 +28,8 @@ coverage.*
 
 #ignore vendor (re-download with go mod download)
 vendor/
+
+# postman
+postman/
+
+timeline/
