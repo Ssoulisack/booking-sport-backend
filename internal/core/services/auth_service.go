@@ -36,6 +36,15 @@ func NewAuthService(
 
 // Register creates a client account; staff and admin accounts are created by an admin
 func (s *AuthServiceImpl) Register(ctx context.Context, req dto.RegisterDTO) (*dto.AuthResponseDTO, error) {
+	user, err := createUser(ctx, s.userRepo, req, domain.RoleClient)
+	if err != nil {
+		return nil, err
+	}
+	return issueTokens(user)
+}
+
+// createUser validates a registration and stores the account with the given role
+func createUser(ctx context.Context, repo output.UserRepository, req dto.RegisterDTO, roleID uint) (*domain.User, error) {
 	email := normalizeEmail(req.Email)
 	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
 		return nil, response.ErrorBadRequest("INVALID_EMAIL")
@@ -47,7 +56,7 @@ func (s *AuthServiceImpl) Register(ctx context.Context, req dto.RegisterDTO) (*d
 		return nil, response.ErrorBadRequest("PASSWORD_TOO_SHORT")
 	}
 
-	exists, err := s.userRepo.ExistsByEmail(ctx, email)
+	exists, err := repo.ExistsByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
@@ -61,18 +70,18 @@ func (s *AuthServiceImpl) Register(ctx context.Context, req dto.RegisterDTO) (*d
 	}
 	user := &domain.User{
 		Email:        email,
-		Username:     email, // username is unique but clients register by email only
+		Username:     email, // username is unique but accounts are identified by email only
 		Name:         strings.TrimSpace(req.Name),
 		Phone:        strings.TrimSpace(req.Phone),
 		PasswordHash: hash,
-		RoleID:       domain.RoleClient,
+		RoleID:       roleID,
 		Status:       true,
 		LastActive:   time.Now(),
 	}
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	if err := repo.Create(ctx, user); err != nil {
 		return nil, err
 	}
-	return issueTokens(user)
+	return user, nil
 }
 
 func (s *AuthServiceImpl) Login(ctx context.Context, req dto.LoginDTO) (*dto.AuthResponseDTO, error) {

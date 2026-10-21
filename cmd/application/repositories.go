@@ -5,7 +5,9 @@ import (
 	"backend/internal/adapters/secondary/minio"
 	"backend/internal/adapters/secondary/postgres"
 	"backend/internal/adapters/secondary/redis"
+	"backend/internal/adapters/secondary/storage"
 	"backend/internal/config"
+	"backend/internal/core/domain"
 	"backend/internal/core/port/output"
 	"log"
 )
@@ -18,8 +20,17 @@ type AppRepositories struct {
 	minio    minio.MinIORepository
 	mailer   mailer.MailerRepository
 	postgres postgres.PostgresRepository
+	storage  output.FileStorage
 	// Domain repositories
-	user output.UserRepository
+	user          output.UserRepository
+	sports        output.SportRepository
+	resources     output.ResourceRepository
+	coaches       output.CoachRepository
+	openingHours  output.OpeningHourRepository
+	closures      output.ClosureRepository
+	prices        output.PriceRepository
+	classSessions output.ClassSessionRepository
+	rules         output.RuleRepository
 }
 
 // setupRepositories initializes all data storage connections
@@ -51,15 +62,25 @@ func SetupRepositories(cfg *config.Config) *AppRepositories {
 	mailerRepo := mailer.NewMailerRepository(cfg.Mailer)
 
 	// Domain repositories
-	userRepo := postgres.NewUserRepository(postgresRepo.GetDB())
+	db := postgresRepo.GetDB()
+	userRepo := postgres.NewUserRepository(db)
 
 	return &AppRepositories{
 		// mysql:  mysqlRepo,
-		redis:    redisRepo,
-		minio:    minioRepo,
-		user:     userRepo,
-		mailer:   mailerRepo,
-		postgres: postgresRepo,
+		redis:         redisRepo,
+		minio:         minioRepo,
+		storage:       storage.NewSupabaseStorage(cfg.Storage),
+		user:          userRepo,
+		mailer:        mailerRepo,
+		postgres:      postgresRepo,
+		sports:        postgres.NewCRUDRepository[domain.Sport](db, "name"),
+		resources:     postgres.NewCRUDRepository[domain.Resource](db, "name"),
+		coaches:       postgres.NewCoachRepository(db),
+		openingHours:  postgres.NewOpeningHourRepository(db),
+		closures:      postgres.NewCRUDRepository[domain.Closure](db, ""),
+		prices:        postgres.NewPriceRepository(db),
+		classSessions: postgres.NewCRUDRepository[domain.ClassSession](db, "title"),
+		rules:         postgres.NewRuleRepository(db),
 	}
 
 }

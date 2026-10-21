@@ -14,4 +14,5 @@ func SetupRoutes(app fiber.Router, handlers *AppHandler) {
 	api := app.Group("/api/v1")
 	router.SetupAuthRoutes(api, handlers.auth)
 	router.SetupUserRoutes(api, handlers.user)
+	router.SetupAdminRoutes(api, handlers.catalog, handlers.schedule, handlers.rules, handlers.media, handlers.adminUsers)
 }

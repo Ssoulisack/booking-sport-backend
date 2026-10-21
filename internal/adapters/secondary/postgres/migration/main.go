@@ -13,6 +13,14 @@ func DatabaseMigrations(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&domain.Role{},
 		&domain.User{},
+		&domain.Sport{},
+		&domain.Resource{},
+		&domain.Coach{},
+		&domain.OpeningHour{},
+		&domain.Closure{},
+		&domain.Price{},
+		&domain.ClassSession{},
+		&domain.BookingRule{},
 	); err != nil {
 		return err
 	}

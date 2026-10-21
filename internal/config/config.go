@@ -6,6 +6,7 @@ import (
 	"backend/internal/adapters/secondary/mysql"
 	"backend/internal/adapters/secondary/postgres"
 	"backend/internal/adapters/secondary/redis"
+	"backend/internal/adapters/secondary/storage"
 	"fmt"
 	"strings"
 
@@ -23,6 +24,7 @@ type Config struct {
 	Redis    redis.Config
 	JWT      JWTConfig
 	Minio    minio.Config
+	Storage  storage.Config
 	Mailer   mailer.Config
 }
 
@@ -69,9 +71,16 @@ func LoadConfig() (*Config, error) {
 	if err := viper.Unmarshal(&config); err != nil {
 		return nil, fmt.Errorf("❌ failed to unmarshal config: %w", err)
 	}
-	// Postgres settings live under database.postgres, not at the top level
-	if err := viper.UnmarshalKey("database.postgres", &config.Postgres); err != nil {
-		return nil, fmt.Errorf("❌ failed to unmarshal postgres config: %w", err)
+	// Postgres settings live under database.postgres, not at the top level.
+	// Read key by key so APP_DATABASE_POSTGRES_* environment overrides still apply.
+	config.Postgres = postgres.Config{
+		Host:     viper.GetString("database.postgres.host"),
+		Port:     viper.GetString("database.postgres.port"),
+		User:     viper.GetString("database.postgres.user"),
+		Password: viper.GetString("database.postgres.password"),
+		DBName:   viper.GetString("database.postgres.dbname"),
+		SSLMode:  viper.GetString("database.postgres.sslmode"),
+		TimeZone: viper.GetString("database.postgres.timezone"),
 	}
 	MinioGlobal = config.Minio
 	JWTGlobal = config.JWT
@@ -119,6 +128,12 @@ func setDefaults() {
 	viper.SetDefault("minio.secretKey", "minio")
 	viper.SetDefault("minio.bucketName", "sabaix")
 	viper.SetDefault("minio.baseUrl", "http://localhost:2087/sabaix")
+
+	// Storage defaults (Supabase Storage); empty until configured
+	viper.SetDefault("storage.projectUrl", "")
+	viper.SetDefault("storage.bucket", "")
+	viper.SetDefault("storage.serviceKey", "")
+	viper.SetDefault("storage.publicBaseUrl", "")
 
 	// Mailer defaults
 	viper.SetDefault("mailer.host", "smtp.example.com")

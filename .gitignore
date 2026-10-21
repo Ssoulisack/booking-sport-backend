@@ -33,3 +33,9 @@ vendor/
 postman/
 
 timeline/
+
+# agent
+.agents/
+
+# skills-lock.json
+skills-lock.json

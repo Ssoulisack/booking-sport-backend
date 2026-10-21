@@ -32,6 +32,14 @@ minio:
   bucketName: booking
   baseUrl: http://localhost:9000
 
+# File storage (Supabase Storage). serviceKey is the server-side service_role key: never put it in the frontend.
+# publicBaseUrl is optional (CDN / custom domain); leave empty to use the Supabase public URL.
+storage:
+  projectUrl: https://<project-ref>.supabase.co
+  bucket: booking-media
+  serviceKey: change-me
+  publicBaseUrl: ""
+
 mailer:
   host: smtp.example.com
   username: change-me
