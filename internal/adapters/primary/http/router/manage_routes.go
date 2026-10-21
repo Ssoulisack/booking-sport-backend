@@ -82,6 +82,7 @@ func SetupManageRoutes(
 	b.Get("/class-sessions", staff, schedule.ListClassSessions)
 	b.Get("/class-sessions/:id", staff, schedule.GetClassSession)
 	b.Post("/class-sessions", manager, schedule.CreateClassSession)
+	b.Post("/class-sessions/repeat", manager, schedule.RepeatClassSessions)
 	b.Put("/class-sessions/:id", manager, schedule.UpdateClassSession)
 	b.Delete("/class-sessions/:id", manager, schedule.DeleteClassSession)
 

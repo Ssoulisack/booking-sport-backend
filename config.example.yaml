@@ -8,6 +8,10 @@ server:
   port: 3000
   readTimeout: 10
   writeTimeout: 10
+  # Behind a load balancer / reverse proxy: trust its client-IP header so rate limits see real users.
+  # List only your proxy addresses (IP or CIDR). Leave both empty when clients connect directly.
+  proxyHeader: ""            # e.g. X-Forwarded-For
+  trustedProxies: []         # e.g. ["10.0.0.0/8"]
 
 database:
   postgres:

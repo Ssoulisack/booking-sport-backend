@@ -359,15 +359,18 @@ func (s *ScheduleServiceImpl) GetClassSession(ctx context.Context, businessID, i
 	return &d, nil
 }
 
+// ListClassSessions lists classes soonest first; ?date= or ?from=&to= limit the days, ?keyword= searches titles
 func (s *ScheduleServiceImpl) ListClassSessions(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.ClassSessionDTO], error) {
+	loc, err := s.limits.Location(ctx, businessID)
+	if err != nil {
+		return nil, err
+	}
+	f, err := classFilter(q, loc)
+	if err != nil {
+		return nil, err
+	}
 	lq, page, limit := newListQuery(q)
-	if q.SportID != 0 {
-		lq.Filters["sport_id"] = q.SportID
-	}
-	if q.Active != nil {
-		lq.Filters["active"] = *q.Active
-	}
-	items, total, err := s.classes.List(ctx, businessID, lq)
+	items, total, err := s.classes.ListFiltered(ctx, businessID, f, lq)
 	if err != nil {
 		return nil, err
 	}

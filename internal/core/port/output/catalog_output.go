@@ -26,10 +26,20 @@ type CoachRepository interface {
 type ClassSessionRepository interface {
 	ScopedRepository[domain.ClassSession]
 	CountStartingBetween(ctx context.Context, businessID uint, from, to time.Time) (int64, error)
-	// ListUpcoming lists active sessions starting at or after from, soonest first
-	ListUpcoming(ctx context.Context, businessID uint, from time.Time, q ListQuery) ([]domain.ClassSession, int64, error)
+	// ListFiltered lists sessions starting in the filter's range, soonest first
+	ListFiltered(ctx context.Context, businessID uint, f ClassFilter, q ListQuery) ([]domain.ClassSession, int64, error)
+	// CreateMany stores every session (and its court / coach hold) in one transaction: all or nothing
+	CreateMany(ctx context.Context, sessions []domain.ClassSession) error
 	// ListBetween lists sessions (active or not) overlapping [from, to)
 	ListBetween(ctx context.Context, businessID uint, from, to time.Time) ([]domain.ClassSession, error)
+}
+
+// ClassFilter narrows a class list; zero values do not filter
+type ClassFilter struct {
+	From, To   *time.Time // sessions starting in [From, To)
+	SportID    uint
+	ActiveOnly bool
+	Active     *bool
 }
 
 // OpeningHourRepository replaces the whole weekly schedule of an owner in one transaction

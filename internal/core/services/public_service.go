@@ -135,17 +135,25 @@ func teaches(c domain.Coach, sportID uint) bool {
 	return false
 }
 
-// ClassSessions lists upcoming active sessions, soonest first, with the seats still free
+// ClassSessions lists upcoming active sessions, soonest first, with the seats still free.
+// ?date= or ?from=&to= (business timezone) limit the days; sessions that already started are never listed.
 func (s *PublicServiceImpl) ClassSessions(ctx context.Context, slug string, q dto.ListQuery) (*dto.PagedResult[dto.ClassSessionDTO], error) {
 	b, err := s.published(ctx, slug)
 	if err != nil {
 		return nil, err
 	}
-	lq, page, limit := newListQuery(q)
-	if q.SportID != 0 {
-		lq.Filters["sport_id"] = q.SportID
+	f, err := classFilter(q, locationOf(b))
+	if err != nil {
+		return nil, err
 	}
-	items, total, err := s.classes.ListUpcoming(ctx, b.ID, s.now(), lq)
+	now := s.now()
+	if f.From == nil || f.From.Before(now) {
+		f.From = &now
+	}
+	f.Active, f.ActiveOnly = nil, true
+	lq, page, limit := newListQuery(q)
+	lq.Keyword = ""
+	items, total, err := s.classes.ListFiltered(ctx, b.ID, f, lq)
 	if err != nil {
 		return nil, err
 	}

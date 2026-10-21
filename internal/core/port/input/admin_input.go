@@ -51,6 +51,8 @@ type ScheduleService interface {
 	ListClassSessions(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.ClassSessionDTO], error)
 	UpdateClassSession(ctx context.Context, businessID, id uint, req dto.ClassSessionRequest) (*dto.ClassSessionDTO, error)
 	DeleteClassSession(ctx context.Context, businessID, id uint) error
+	// RepeatClassSessions creates a session on every chosen weekday in a date range, all or nothing
+	RepeatClassSessions(ctx context.Context, businessID uint, req dto.RepeatClassRequest) (*dto.RepeatClassResultDTO, error)
 }
 
 // RuleService manages booking rules and resolves the rule that applies to a sport or resource

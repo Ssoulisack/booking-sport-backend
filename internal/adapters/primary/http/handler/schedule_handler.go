@@ -28,6 +28,7 @@ type (
 		ListClassSessions(c *fiber.Ctx) error
 		UpdateClassSession(c *fiber.Ctx) error
 		DeleteClassSession(c *fiber.Ctx) error
+		RepeatClassSessions(c *fiber.Ctx) error
 	}
 	scheduleHandler struct {
 		svc input.ScheduleService
@@ -116,4 +117,9 @@ func (h *scheduleHandler) UpdateClassSession(c *fiber.Ctx) error {
 }
 func (h *scheduleHandler) DeleteClassSession(c *fiber.Ctx) error {
 	return scopedRemove(c, h.svc.DeleteClassSession)
+}
+
+// RepeatClassSessions creates a class on every chosen weekday between two dates
+func (h *scheduleHandler) RepeatClassSessions(c *fiber.Ctx) error {
+	return scopedCreate(c, h.svc.RepeatClassSessions)
 }

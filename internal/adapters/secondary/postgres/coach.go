@@ -81,12 +81,28 @@ func (r *classSessionRepository) CountStartingBetween(ctx context.Context, busin
 	return total, exception.HandleGormError(err)
 }
 
-func (r *classSessionRepository) ListUpcoming(ctx context.Context, businessID uint, from time.Time, q output.ListQuery) ([]domain.ClassSession, int64, error) {
+func (r *classSessionRepository) ListFiltered(ctx context.Context, businessID uint, f output.ClassFilter, q output.ListQuery) ([]domain.ClassSession, int64, error) {
 	tx, err := r.scope(ctx, businessID)
 	if err != nil {
 		return nil, 0, err
 	}
-	tx = applyFilters(tx.Where("active = ? AND starts_at >= ?", true, from), q.Filters)
+	if f.From != nil {
+		tx = tx.Where("starts_at >= ?", *f.From)
+	}
+	if f.To != nil {
+		tx = tx.Where("starts_at < ?", *f.To)
+	}
+	if f.SportID != 0 {
+		tx = tx.Where("sport_id = ?", f.SportID)
+	}
+	if q.Keyword != "" {
+		tx = tx.Where("title ILIKE ?", "%"+q.Keyword+"%")
+	}
+	if f.ActiveOnly {
+		tx = tx.Where("active = ?", true)
+	} else if f.Active != nil {
+		tx = tx.Where("active = ?", *f.Active)
+	}
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, exception.HandleGormError(err)
@@ -155,4 +171,21 @@ func (r *classSessionRepository) ListBetween(ctx context.Context, businessID uin
 	var items []domain.ClassSession
 	err = tx.Where("starts_at < ? AND ends_at > ?", to, from).Order("starts_at ASC").Find(&items).Error
 	return items, exception.HandleGormError(err)
+}
+
+func (r *classSessionRepository) CreateMany(ctx context.Context, sessions []domain.ClassSession) error {
+	return keepAppError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i := range sessions {
+			if sessions[i].BusinessID == 0 {
+				return errNoScope
+			}
+			if err := tx.Create(&sessions[i]).Error; err != nil {
+				return err
+			}
+			if err := syncClassHold(tx, &sessions[i]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
 }

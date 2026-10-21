@@ -441,3 +441,27 @@ func (a api) raw(method, path, token string) string {
 	b, _ := io.ReadAll(res.Body)
 	return string(b)
 }
+
+// expectEmail fails unless an email to `to` contains every one of the given texts
+func expectEmail(t *testing.T, to string, texts ...string) {
+	t.Helper()
+	for range 20 {
+		var list struct {
+			Messages []struct{ ID string } `json:"messages"`
+		}
+		getJSON(t, mailpitAPI+"/search?query=to:"+to, &list)
+		for _, m := range list.Messages {
+			var msg struct{ Text string }
+			getJSON(t, mailpitAPI+"/message/"+m.ID, &msg)
+			all := true
+			for _, want := range texts {
+				all = all && strings.Contains(msg.Text, want)
+			}
+			if all {
+				return
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("no email to %s containing %q", to, texts)
+}

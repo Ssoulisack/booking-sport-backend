@@ -15,7 +15,6 @@ type UserServiceImpl struct {
 	minioRepo minio.MinIORepository
 }
 
-
 // NewUserService creates a new UserService
 func NewUserService(
 	userRepo output.UserRepository,

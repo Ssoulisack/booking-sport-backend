@@ -7,6 +7,7 @@ import (
 	"backend/internal/core/port/output"
 	"context"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
@@ -153,6 +154,9 @@ func (s *BookingServiceImpl) ChangeStatus(ctx context.Context, businessID, id ui
 	}
 	if err != nil {
 		return nil, err
+	}
+	if req.Status == domain.BookingCancelled || req.Status == domain.BookingConfirmed {
+		s.notifyStatusChange(bk, req.Status, strings.TrimSpace(req.Reason))
 	}
 	return s.GetBooking(ctx, businessID, id)
 }
@@ -320,4 +324,20 @@ func (s *BookingServiceImpl) Customers(ctx context.Context, businessID uint, q d
 			Bookings: r.Bookings, LastBookingAt: r.LastBookingAt,
 		}
 	}), nil
+}
+
+// notifyStatusChange emails the customer (or a guest who gave an email) after staff confirm or cancel.
+// A failed email is logged and never undoes the change.
+func (s *BookingServiceImpl) notifyStatusChange(bk *domain.Booking, status, reason string) {
+	to, name := bk.GuestEmail, bk.GuestName
+	if bk.Customer != nil {
+		to, name = bk.Customer.Email, bk.Customer.Name
+	}
+	if to == "" {
+		return // walk-ins without an email are told in person
+	}
+	link := s.frontendURL + "/b/" + bk.Business.Slug
+	if err := s.mailer.SendBookingUpdate(to, name, bk.Business.Name, bk.Code, status, reason, link); err != nil {
+		log.Printf("⚠️  status email for booking %s failed: %v", bk.Code, err)
+	}
 }

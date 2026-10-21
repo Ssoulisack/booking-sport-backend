@@ -14,6 +14,10 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration
 	WriteTimeout time.Duration
 	Port         string
+	// ProxyHeader is read for the client IP only on requests from TrustedProxies, so clients cannot
+	// fake their address to slip past rate limits
+	ProxyHeader    string
+	TrustedProxies []string
 }
 
 type Server struct {
@@ -26,8 +30,12 @@ func NewServer(
 	config ServerConfig,
 ) *Server {
 	app := fiber.New(fiber.Config{
-		ReadTimeout:  config.ReadTimeout,
-		WriteTimeout: config.WriteTimeout,
+		ReadTimeout:             config.ReadTimeout,
+		WriteTimeout:            config.WriteTimeout,
+		ProxyHeader:             config.ProxyHeader,
+		EnableTrustedProxyCheck: config.ProxyHeader != "",
+		TrustedProxies:          config.TrustedProxies,
+		EnableIPValidation:      true, // take the first real IP from a list like "client, proxy"
 	})
 
 	// Add middleware

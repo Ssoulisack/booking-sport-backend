@@ -20,9 +20,11 @@ func main() {
 
 	// Initialize HTTP server
 	serverConfig := http.ServerConfig{
-		Port:         cfg.Server.Port,
-		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
-		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
+		Port:           cfg.Server.Port,
+		ReadTimeout:    time.Duration(cfg.Server.ReadTimeout) * time.Second,
+		WriteTimeout:   time.Duration(cfg.Server.WriteTimeout) * time.Second,
+		ProxyHeader:    cfg.Server.ProxyHeader,
+		TrustedProxies: cfg.Server.TrustedProxies,
 	}
 	server := http.NewServer(
 		serverConfig,

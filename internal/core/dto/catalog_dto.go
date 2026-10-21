@@ -13,6 +13,10 @@ type ListQuery struct {
 	OwnerID   uint   `query:"owner_id"`
 	Status    string `query:"status"`
 	Active    *bool  `query:"active"`
+	// class lists: one day (date) or a range (from, to: both days included), YYYY-MM-DD in the business timezone
+	Date string `query:"date"`
+	From string `query:"from"`
+	To   string `query:"to"`
 }
 
 // PagedResult is one page of a list
@@ -172,4 +176,33 @@ type RuleDTO struct {
 
 type UserStatusRequest struct {
 	Status bool `json:"status"`
+}
+
+// RepeatClassRequest creates the same class on every chosen weekday between two dates, e.g.
+// Monday to Friday 18:00-20:00 from 2026-11-01 to 2026-11-30. Weekday 0 = Sunday.
+type RepeatClassRequest struct {
+	SportID    uint   `json:"sport_id"`
+	CoachID    *uint  `json:"coach_id"`
+	ResourceID *uint  `json:"resource_id"`
+	Title      string `json:"title"`
+	StartTime  string `json:"start_time"` // HH:MM
+	EndTime    string `json:"end_time"`   // HH:MM, "24:00" allowed
+	Weekdays   []int  `json:"weekdays"`
+	From       string `json:"from"` // YYYY-MM-DD, included
+	To         string `json:"to"`   // YYYY-MM-DD, included
+	Capacity   int    `json:"capacity"`
+	Price      int64  `json:"price"`
+	Currency   string `json:"currency"`
+	Active     *bool  `json:"active"`
+}
+
+type SkippedDate struct {
+	Date   string `json:"date"`
+	Reason string `json:"reason"`
+}
+
+type RepeatClassResultDTO struct {
+	Created  int               `json:"created"`
+	Sessions []ClassSessionDTO `json:"sessions"`
+	Skipped  []SkippedDate     `json:"skipped"` // days closed for the venue, court or coach
 }

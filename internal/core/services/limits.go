@@ -225,3 +225,46 @@ func (l *Limits) Usage(ctx context.Context, businessID uint) (*dto.UsageDTO, err
 		Images:                 item(images, lim.MaxImages),
 	}, nil
 }
+
+// Location is the business's timezone (UTC if it cannot be loaded)
+func (l *Limits) Location(ctx context.Context, businessID uint) (*time.Location, error) {
+	b, err := l.businesses.GetByID(ctx, businessID)
+	if err != nil {
+		return nil, err
+	}
+	return locationOf(b), nil
+}
+
+// CheckClassSessionsBatch checks the monthly limit for many new sessions at once: for every month
+// they fall in, the sessions already there plus the new ones must fit
+func (l *Limits) CheckClassSessionsBatch(ctx context.Context, businessID uint, starts []time.Time) error {
+	b, lim, err := l.limitsOf(ctx, businessID)
+	if err != nil {
+		return err
+	}
+	// keyed by "2006-01": time.Time keys would differ by their *Location even for the same month
+	type month struct {
+		from  time.Time
+		added int64
+	}
+	perMonth := map[string]*month{}
+	for _, s := range starts {
+		from, _ := monthOf(s, b.Timezone)
+		key := from.Format("2006-01")
+		if perMonth[key] == nil {
+			perMonth[key] = &month{from: from}
+		}
+		perMonth[key].added++
+	}
+	for _, mo := range perMonth {
+		from, added := mo.from, mo.added
+		used, err := l.classes.CountStartingBetween(ctx, businessID, from, from.AddDate(0, 1, 0))
+		if err != nil {
+			return err
+		}
+		if used+added > int64(lim.MaxClassSessionsPerMonth) {
+			return limitReached("class_sessions")
+		}
+	}
+	return nil
+}

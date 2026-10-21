@@ -41,6 +41,10 @@ type ServerConfig struct {
 	Port         string
 	ReadTimeout  int
 	WriteTimeout int
+	// Behind a load balancer: the header carrying the client IP (e.g. X-Forwarded-For) and the
+	// proxy addresses allowed to set it. Empty = clients connect directly.
+	ProxyHeader    string
+	TrustedProxies []string
 }
 
 // JWTConfig holds the JWT configuration

@@ -79,3 +79,18 @@ func (m *platformMailer) SendBookingLink(to, businessName, code, link string) er
 		Note:    "Anyone with this link can see and cancel the booking, so do not share it.",
 	})
 }
+
+func (m *platformMailer) SendBookingUpdate(to, name, businessName, code, status, reason, link string) error {
+	title := fmt.Sprintf("Booking %s confirmed", code)
+	message := fmt.Sprintf("Hi %s, %s confirmed your booking %s. See you there!", name, businessName, code)
+	note := "If you can no longer come, please cancel or contact the business."
+	if status == "cancelled" {
+		title = fmt.Sprintf("Booking %s cancelled", code)
+		message = fmt.Sprintf("Hi %s, %s cancelled your booking %s.", name, businessName, code)
+		note = "Sorry for the change. You can book another time on the business page."
+		if reason != "" {
+			note = "Reason: " + reason + ". " + note
+		}
+	}
+	return m.send(to, title, emailData{Title: title, Message: message, Button: "Open " + businessName, URL: link, Note: note})
+}

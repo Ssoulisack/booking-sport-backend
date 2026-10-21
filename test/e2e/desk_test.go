@@ -140,6 +140,7 @@ func TestDeskAndReports(t *testing.T) {
 	if r := status(a2, "cancelled", "court repair"); r.str("data.status") != "cancelled" || r.str("data.cancel_reason") != "court repair" {
 		t.Fatalf("staff cancel: %d %v", r.status, r.body)
 	}
+	expectEmail(t, "alice@desk.test", "cancelled your booking", "Reason: court repair", "Desk Club")
 	a.expect(200, "", "POST", m+"/bookings/"+c1+"/status", staff, map[string]any{"status": "cancelled", "reason": "double entry"})
 	if r := status(c1, "nonsense", ""); r.msg() != "INVALID_STATUS_CHANGE" {
 		t.Fatalf("unknown status: %d %v", r.status, r.body)
@@ -251,6 +252,7 @@ func TestDeskAndReports(t *testing.T) {
 	if r := status(pending.str("data.id"), "confirmed", ""); r.str("data.status") != "confirmed" {
 		t.Fatalf("confirm: %d %v", r.status, r.body)
 	}
+	expectEmail(t, "bob@desk.test", "confirmed your booking", pending.str("data.code"))
 	if r := staffBook(rentalFor(court1, later.at(11, 0), 60, map[string]any{"guest": walkIn})); r.str("data.status") != "confirmed" {
 		t.Fatalf("staff bookings skip approval: %v", r.body)
 	}

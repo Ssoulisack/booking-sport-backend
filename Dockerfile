@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
@@ -13,23 +13,29 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o main ./cmd/api
 
 # Use a smaller image for the final stage
-FROM alpine:latest
+FROM alpine:3.20
 
 # Set timezone
-ENV TZ=Asia/Bangkok
+ENV TZ=Asia/Vientiane
 # Install tzdata for timezone support
 RUN apk add --no-cache tzdata
 
 RUN apk --no-cache add ca-certificates
 
-WORKDIR /root/
+# Run as a non-root user
+RUN adduser -D -H app
+WORKDIR /app
 
 # Copy the binary from the builder stage
 COPY --from=builder /app/main .
-COPY --from=builder /app/configs ./configs
+
+# config.yaml holds secrets, so it is never part of the image: mount it at run time, e.g.
+#   docker run -v "$PWD/config.yaml:/app/config.yaml:ro" -p 3000:3000 backend
+# (or set APP_* environment variables)
+USER app
 
 # Expose the application port
 EXPOSE 3000

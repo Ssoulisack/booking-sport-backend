@@ -72,4 +72,6 @@ type Mailer interface {
 	SendPasswordReset(to, name, resetURL string) error
 	// SendBookingLink gives a guest the private link to view or cancel their booking
 	SendBookingLink(to, businessName, code, link string) error
+	// SendBookingUpdate tells a customer that staff confirmed or cancelled their booking
+	SendBookingUpdate(to, name, businessName, code, status, reason, link string) error
 }
