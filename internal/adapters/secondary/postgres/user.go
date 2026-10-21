@@ -5,6 +5,7 @@ import (
 	"backend/internal/core/domain"
 	"backend/internal/core/port/output"
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -74,6 +75,11 @@ func (r *userRepository) SetStatus(ctx context.Context, id uint, status bool) er
 		return exception.HandleGormError(gorm.ErrRecordNotFound)
 	}
 	return nil
+}
+
+func (r *userRepository) SetPassword(ctx context.Context, id uint, hash []byte, changedAt time.Time) error {
+	return requireAffected(r.db.WithContext(ctx).Model(&domain.User{}).Where("id = ?", id).
+		Updates(map[string]any{"password_hash": hash, "password_changed_at": changedAt}))
 }
 
 func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {

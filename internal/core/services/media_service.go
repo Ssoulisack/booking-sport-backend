@@ -1,16 +1,19 @@
 package services
 
 import (
+	"backend/internal/core/domain"
 	"backend/internal/core/dto"
 	"backend/internal/core/port/input"
 	"backend/internal/core/port/output"
 	"backend/pkg/response"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"regexp"
+	"strconv"
 
 	"github.com/google/uuid"
 )
@@ -19,23 +22,71 @@ const maxUploadBytes = 2 << 20 // 2 MB
 
 var (
 	// folders a file may be uploaded to
-	mediaFolders = map[string]bool{"sports": true, "coaches": true, "classes": true}
+	mediaFolders = map[string]bool{"sports": true, "coaches": true, "classes": true, "branding": true}
 	// content type (detected from the bytes, not the filename) -> extension
 	imageExtensions = map[string]string{"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}
-	// the only shape of key the server ever generates
-	mediaKeyPattern = regexp.MustCompile(`^(sports|coaches|classes)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$`)
+	// the only shape of key the server ever generates: businesses/{id}/{folder}/{uuid}.{ext}
+	mediaKeyPattern = regexp.MustCompile(`^businesses/([0-9]+)/(sports|coaches|classes|branding)/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$`)
 )
 
-type MediaServiceImpl struct {
+// isValidMediaKey checks the key's shape and that it belongs to businessID
+func isValidMediaKey(businessID uint, key string) bool {
+	m := mediaKeyPattern.FindStringSubmatch(key)
+	return m != nil && m[1] == strconv.FormatUint(uint64(businessID), 10)
+}
+
+// mediaFiles is shared by every service that stores an image key on a record
+type mediaFiles struct {
 	storage output.FileStorage
+	media   output.MediaRepository
 }
 
-func NewMediaService(storage output.FileStorage) input.MediaService {
-	return &MediaServiceImpl{storage: storage}
+// requireOwned accepts "" (no image) or a key this business uploaded
+func (m mediaFiles) requireOwned(ctx context.Context, businessID uint, key string) error {
+	if key == "" {
+		return nil
+	}
+	if !isValidMediaKey(businessID, key) {
+		return badRequest("INVALID_FILE_KEY")
+	}
+	rec, err := m.media.Get(ctx, businessID, key)
+	if err != nil {
+		return err
+	}
+	if rec == nil {
+		return badRequest("INVALID_FILE_KEY")
+	}
+	return nil
 }
 
-// Upload accepts jpg / png / webp up to 2 MB. The key is generated here, so callers cannot choose paths.
-func (s *MediaServiceImpl) Upload(ctx context.Context, folder string, file io.Reader) (*dto.MediaDTO, error) {
+// replaced deletes the old file after a successful save; a failure only leaves an orphan file
+func (m mediaFiles) replaced(ctx context.Context, businessID uint, oldKey, newKey string) {
+	if oldKey == "" || oldKey == newKey {
+		return
+	}
+	if err := m.storage.Delete(ctx, oldKey); err != nil {
+		log.Printf("⚠️  could not delete replaced image %s: %v", oldKey, err)
+		return
+	}
+	if err := m.media.Delete(ctx, businessID, oldKey); err != nil && !isNotFound(err) {
+		log.Printf("⚠️  could not delete media record %s: %v", oldKey, err)
+	}
+}
+
+func (m mediaFiles) url(key string) string { return m.storage.URL(key) }
+
+type MediaServiceImpl struct {
+	files  mediaFiles
+	limits *Limits
+}
+
+func NewMediaService(storage output.FileStorage, media output.MediaRepository, limits *Limits) input.MediaService {
+	return &MediaServiceImpl{files: mediaFiles{storage: storage, media: media}, limits: limits}
+}
+
+// Upload accepts jpg / png / webp up to 2 MB within the plan's storage limits.
+// The key is generated here, so callers cannot choose paths.
+func (s *MediaServiceImpl) Upload(ctx context.Context, businessID uint, folder string, file io.Reader) (*dto.MediaDTO, error) {
 	if !mediaFolders[folder] {
 		return nil, badRequest("INVALID_FOLDER")
 	}
@@ -54,24 +105,36 @@ func (s *MediaServiceImpl) Upload(ctx context.Context, folder string, file io.Re
 	if !ok {
 		return nil, response.NewError(http.StatusUnsupportedMediaType, "UNSUPPORTED_FILE_TYPE")
 	}
+	if err := s.limits.CheckStorage(ctx, businessID, int64(len(data))); err != nil {
+		return nil, err
+	}
 
-	key := folder + "/" + uuid.NewString() + "." + ext
-	if err := s.storage.Upload(ctx, key, contentType, bytes.NewReader(data)); err != nil {
+	key := fmt.Sprintf("businesses/%d/%s/%s.%s", businessID, folder, uuid.NewString(), ext)
+	if err := s.files.storage.Upload(ctx, key, contentType, bytes.NewReader(data)); err != nil {
 		log.Printf("❌ file upload failed: %v", err)
 		return nil, response.NewError(http.StatusBadGateway, "STORAGE_UPLOAD_FAILED")
 	}
-	return &dto.MediaDTO{Key: key, URL: s.storage.URL(key)}, nil
+	if err := s.files.media.Create(ctx, &domain.Media{BusinessID: businessID, Key: key, SizeBytes: int64(len(data))}); err != nil {
+		_ = s.files.storage.Delete(ctx, key) // keep storage and records in step
+		return nil, err
+	}
+	return &dto.MediaDTO{Key: key, URL: s.files.url(key)}, nil
 }
 
-func (s *MediaServiceImpl) Delete(ctx context.Context, key string) error {
-	if !isValidMediaKey(key) {
+func (s *MediaServiceImpl) Delete(ctx context.Context, businessID uint, key string) error {
+	if !isValidMediaKey(businessID, key) {
 		return badRequest("INVALID_FILE_KEY")
 	}
-	if err := s.storage.Delete(ctx, key); err != nil {
+	rec, err := s.files.media.Get(ctx, businessID, key)
+	if err != nil {
+		return err
+	}
+	if rec == nil {
+		return notFound("FILE_NOT_FOUND")
+	}
+	if err := s.files.storage.Delete(ctx, key); err != nil {
 		log.Printf("❌ file delete failed: %v", err)
 		return response.NewError(http.StatusBadGateway, "STORAGE_DELETE_FAILED")
 	}
-	return nil
+	return s.files.media.Delete(ctx, businessID, key)
 }
-
-func isValidMediaKey(key string) bool { return mediaKeyPattern.MatchString(key) }

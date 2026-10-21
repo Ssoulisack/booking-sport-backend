@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"backend/internal/adapters/primary/http/middleware"
 	"backend/internal/core/dto"
 	"backend/internal/core/port/input"
 	"backend/pkg/response"
@@ -25,7 +26,7 @@ func NewRuleHandler(svc input.RuleService) RuleHandler {
 	return &ruleHandler{svc: svc}
 }
 
-// scopeParams reads /:scopeType/:scopeId; the global rule uses id 0
+// scopeParams reads /:scopeType/:scopeId; the default rule uses id 0
 func scopeParams(c *fiber.Ctx) (string, uint, error) {
 	id, err := c.ParamsInt("scopeId")
 	if err != nil || id < 0 {
@@ -35,11 +36,8 @@ func scopeParams(c *fiber.Ctx) (string, uint, error) {
 }
 
 func (h *ruleHandler) ListRules(c *fiber.Ctx) error {
-	res, err := h.svc.ListRules(c.UserContext())
-	if err != nil {
-		return fail(c, err)
-	}
-	return response.NewSuccessResponse(c, res)
+	res, err := h.svc.ListRules(c.UserContext(), middleware.BusinessID(c))
+	return ok(c, res, err)
 }
 
 func (h *ruleHandler) GetRule(c *fiber.Ctx) error {
@@ -47,11 +45,8 @@ func (h *ruleHandler) GetRule(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	res, err := h.svc.GetRule(c.UserContext(), scopeType, scopeID)
-	if err != nil {
-		return fail(c, err)
-	}
-	return response.NewSuccessResponse(c, res)
+	res, err := h.svc.GetRule(c.UserContext(), middleware.BusinessID(c), scopeType, scopeID)
+	return ok(c, res, err)
 }
 
 func (h *ruleHandler) SetRule(c *fiber.Ctx) error {
@@ -60,14 +55,11 @@ func (h *ruleHandler) SetRule(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 	var req dto.RuleRequest
-	if err := c.BodyParser(&req); err != nil {
-		return fail(c, response.ErrorBadRequest("INVALID_BODY"))
-	}
-	res, err := h.svc.SetRule(c.UserContext(), scopeType, scopeID, req)
-	if err != nil {
+	if err := bind(c, &req); err != nil {
 		return fail(c, err)
 	}
-	return response.NewSuccessResponse(c, res)
+	res, err := h.svc.SetRule(c.UserContext(), middleware.BusinessID(c), scopeType, scopeID, req)
+	return ok(c, res, err)
 }
 
 func (h *ruleHandler) DeleteRule(c *fiber.Ctx) error {
@@ -75,22 +67,13 @@ func (h *ruleHandler) DeleteRule(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	if err := h.svc.DeleteRule(c.UserContext(), scopeType, scopeID); err != nil {
-		return fail(c, err)
-	}
-	return response.NewSuccessMessagesResponse(c, "DELETED")
+	return done(c, "DELETED", h.svc.DeleteRule(c.UserContext(), middleware.BusinessID(c), scopeType, scopeID))
 }
 
 // Effective answers "which rule applies?" for ?sport_id= or ?resource_id=
 func (h *ruleHandler) Effective(c *fiber.Ctx) error {
-	var q dto.ListQuery
-	if err := c.QueryParser(&q); err != nil {
-		return fail(c, response.ErrorBadRequest("INVALID_QUERY"))
-	}
-	resourceID := uint(c.QueryInt("resource_id", 0))
-	res, err := h.svc.Effective(c.UserContext(), q.SportID, resourceID)
-	if err != nil {
-		return fail(c, err)
-	}
-	return response.NewSuccessResponse(c, res)
+	sportID := uint(max(c.QueryInt("sport_id", 0), 0))
+	resourceID := uint(max(c.QueryInt("resource_id", 0), 0))
+	res, err := h.svc.Effective(c.UserContext(), middleware.BusinessID(c), sportID, resourceID)
+	return ok(c, res, err)
 }

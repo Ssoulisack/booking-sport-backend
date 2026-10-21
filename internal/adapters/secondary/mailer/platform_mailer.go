@@ -1,0 +1,71 @@
+package mailer
+
+import (
+	"backend/internal/core/dto"
+	"backend/internal/core/port/output"
+	"bytes"
+	"fmt"
+	"html/template"
+)
+
+// platformMailer sends the booking platform's own emails (invites, password resets).
+// html/template escapes every value, so business and user names cannot inject HTML.
+type platformMailer struct {
+	repo    MailerRepository
+	appName string
+}
+
+// NewPlatformMailer wraps the SMTP mailer with the platform's email templates
+func NewPlatformMailer(config Config, appName string) output.Mailer {
+	return &platformMailer{repo: NewMailerRepository(config), appName: appName}
+}
+
+var emailLayout = template.Must(template.New("email").Parse(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><title>{{.Title}}</title></head>
+<body style="font-family:Arial,sans-serif;background:#f4f4f4;padding:20px;">
+  <div style="max-width:560px;margin:auto;background:#fff;padding:28px;border-radius:8px;">
+    <h2 style="color:#222;">{{.Title}}</h2>
+    <p style="font-size:16px;color:#333;">{{.Message}}</p>
+    <p style="text-align:center;margin:32px 0;">
+      <a href="{{.URL}}" style="background:#0b6bcb;color:#fff;text-decoration:none;padding:12px 24px;border-radius:5px;font-weight:bold;">{{.Button}}</a>
+    </p>
+    <p style="font-size:13px;color:#666;">{{.Note}}</p>
+    <p style="font-size:13px;color:#666;word-break:break-all;">If the button does not work, open this link: <a href="{{.URL}}">{{.URL}}</a></p>
+    <hr style="border:none;border-top:1px solid #ddd;margin:24px 0;">
+    <p style="font-size:12px;color:#999;">{{.AppName}}</p>
+  </div>
+</body></html>`))
+
+type emailData struct {
+	Title, Message, Button, URL, Note, AppName string
+}
+
+func (m *platformMailer) send(to, subject string, d emailData) error {
+	d.AppName = m.appName
+	var html bytes.Buffer
+	if err := emailLayout.Execute(&html, d); err != nil {
+		return err
+	}
+	plain := fmt.Sprintf("%s\n\n%s\n\n%s: %s\n\n%s\n\n-- %s", d.Title, d.Message, d.Button, d.URL, d.Note, m.appName)
+	return m.repo.SendMail(dto.MailDTO{To: to, Subject: subject, Body: plain, BodyHTML: html.String()})
+}
+
+func (m *platformMailer) SendInvitation(to, businessName, inviterName, role, acceptURL string) error {
+	return m.send(to, fmt.Sprintf("You're invited to manage %s", businessName), emailData{
+		Title:   fmt.Sprintf("Join %s", businessName),
+		Message: fmt.Sprintf("%s invited you to manage %s on %s as %s.", inviterName, businessName, m.appName, role),
+		Button:  "Accept invitation",
+		URL:     acceptURL,
+		Note:    "This invitation expires in 7 days. If you were not expecting it, you can ignore this email.",
+	})
+}
+
+func (m *platformMailer) SendPasswordReset(to, name, resetURL string) error {
+	return m.send(to, "Reset your password", emailData{
+		Title:   "Reset your password",
+		Message: fmt.Sprintf("Hi %s, we received a request to reset your %s password.", name, m.appName),
+		Button:  "Set a new password",
+		URL:     resetURL,
+		Note:    "This link expires in 1 hour and works once. If you did not ask for it, ignore this email: your password stays the same.",
+	})
+}

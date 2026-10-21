@@ -2,20 +2,24 @@ package router
 
 import (
 	handler "backend/internal/adapters/primary/http/handler"
+	"backend/internal/adapters/primary/http/middleware"
 	"backend/pkg/jwt"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 // SetupAuthRoutes registers all authentication related routes
-func SetupAuthRoutes(router fiber.Router, authHandler handler.AuthHandler) {
-	auth := router.Group("/auth")
+func SetupAuthRoutes(router fiber.Router, authHandler handler.AuthHandler, auth *middleware.Auth) {
+	a := router.Group("/auth")
 
 	// Public - routes that don't require authentication
-	auth.Post("/register", authHandler.Register)
-	auth.Post("/login", authHandler.Login)
+	a.Post("/register", authHandler.Register)
+	a.Post("/login", authHandler.Login)
+	a.Post("/forgot-password", authHandler.ForgotPassword)
+	a.Post("/reset-password", authHandler.ResetPassword)
 
 	// Private - routes that require authentication
-	auth.Post("/refresh", jwt.AccessRefreshToken, authHandler.Refresh)
-	auth.Get("/me", jwt.AccessToken, authHandler.Me)
+	a.Post("/refresh", jwt.AccessRefreshToken, authHandler.Refresh)
+	a.Get("/me", auth.RequireUser, authHandler.Me)
+	router.Get("/me/businesses", auth.RequireUser, authHandler.MyBusinesses)
 }

@@ -178,7 +178,11 @@ func (m *mailerRepository) SendMail(mailer dto.MailDTO) error {
 }
 
 func NewMailerRepository(config Config) MailerRepository {
-	mailer := gomail.NewDialer(config.Host, 587, config.Username, config.Password)
+	port := config.Port
+	if port == 0 {
+		port = 587
+	}
+	mailer := gomail.NewDialer(config.Host, port, config.Username, config.Password)
 	return &mailerRepository{mailer: mailer, config: config}
 }
 

@@ -9,27 +9,35 @@ import (
 	"gorm.io/gorm"
 )
 
-// Default back-office admin, created once. Change the password after first login.
+// Default Super Admin, created once. Change the password after first login.
 const (
 	adminEmail    = "admin@booking.local"
 	adminPassword = "ChangeMe123!"
 )
 
+// defaultPlans are created once; the Super Admin edits the limits afterwards
+var defaultPlans = []domain.Plan{
+	{Name: "Free", Limits: domain.PlanLimits{
+		MaxSports: 2, MaxResources: 3, MaxCoaches: 3, MaxClassSessionsPerMonth: 20,
+		MaxMembers: 2, MaxStorageMB: 50, MaxImages: 100,
+	}},
+	{Name: "Basic", Limits: domain.PlanLimits{
+		MaxSports: 5, MaxResources: 10, MaxCoaches: 10, MaxClassSessionsPerMonth: 100,
+		MaxMembers: 5, MaxStorageMB: 200, MaxImages: 500,
+	}},
+	{Name: "Pro", Limits: domain.PlanLimits{
+		MaxSports: 20, MaxResources: 50, MaxCoaches: 50, MaxClassSessionsPerMonth: 500,
+		MaxMembers: 20, MaxStorageMB: 1024, MaxImages: 2000,
+	}},
+}
+
 // SetupInitialData is idempotent: it only creates what is missing
 func SetupInitialData(db *gorm.DB) error {
-	roles := []domain.Role{
-		{ID: domain.RoleAdmin, Name: "admin"},
-		{ID: domain.RoleStaff, Name: "staff"},
-		{ID: domain.RoleClient, Name: "client"},
-	}
-	for i := range roles {
-		if err := db.Where("id = ?", roles[i].ID).FirstOrCreate(&roles[i]).Error; err != nil {
+	for _, p := range defaultPlans {
+		plan := p
+		if err := db.Where("name = ?", plan.Name).FirstOrCreate(&plan).Error; err != nil {
 			return err
 		}
-	}
-
-	if err := seedGlobalRule(db); err != nil {
-		return err
 	}
 
 	var count int64
@@ -46,8 +54,8 @@ func SetupInitialData(db *gorm.DB) error {
 	admin := domain.User{
 		Email:        adminEmail,
 		Username:     adminEmail,
-		Name:         "Administrator",
-		RoleID:       domain.RoleAdmin,
+		Name:         "Super Admin",
+		PlatformRole: domain.PlatformRoleSuperAdmin,
 		Verified:     true,
 		Status:       true,
 		LastActive:   time.Now(),
@@ -56,30 +64,6 @@ func SetupInitialData(db *gorm.DB) error {
 	if err := db.Create(&admin).Error; err != nil {
 		return err
 	}
-	log.Printf("⚠️  Default admin created: %s — change its password", adminEmail)
+	log.Printf("⚠️  Default Super Admin created: %s — change its password", adminEmail)
 	return nil
-}
-
-// seedGlobalRule creates the default booking rule once; staff edit it in the back office afterwards
-func seedGlobalRule(db *gorm.DB) error {
-	var count int64
-	if err := db.Model(&domain.BookingRule{}).
-		Where("scope_type = ? AND scope_id = 0", domain.ScopeGlobal).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 0 {
-		return nil
-	}
-	v := func(n int) *int { return &n }
-	return db.Create(&domain.BookingRule{
-		ScopeType:         domain.ScopeGlobal,
-		MinDurationMin:    v(60),
-		MaxDurationMin:    v(180),
-		DurationStepMin:   v(30),
-		StartStepMin:      v(30),
-		CancelBeforeHours: v(24),
-		MaxDaysAhead:      v(30),
-		MinNoticeMin:      v(60),
-		Capacity:          v(10),
-	}).Error
 }

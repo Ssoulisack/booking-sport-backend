@@ -13,8 +13,9 @@ const (
 // Sport is something clients can book (tennis, boxing, soccer, ...)
 type Sport struct {
 	gorm.Model
+	BusinessID  uint   `gorm:"not null;index;uniqueIndex:idx_sports_slug,priority:1,where:deleted_at IS NULL"`
 	Name        string `gorm:"type:varchar(120);not null"`
-	Slug        string `gorm:"type:varchar(140);not null;uniqueIndex:idx_sports_slug,where:deleted_at IS NULL"`
+	Slug        string `gorm:"type:varchar(140);not null;uniqueIndex:idx_sports_slug,priority:2,where:deleted_at IS NULL"`
 	Description string `gorm:"type:text"`
 	ImageKey    string `gorm:"type:varchar(255)"` // object key in file storage, never a full URL
 	Active      bool   `gorm:"not null;default:true"`
@@ -23,19 +24,21 @@ type Sport struct {
 // Resource is a bookable place: a tennis court, a soccer pitch, a boxing ring
 type Resource struct {
 	gorm.Model
-	SportID uint   `gorm:"not null;index"`
-	Name    string `gorm:"type:varchar(120);not null"`
-	Kind    string `gorm:"type:varchar(20);not null"`
-	Active  bool   `gorm:"not null;default:true"`
+	BusinessID uint   `gorm:"not null;index"`
+	SportID    uint   `gorm:"not null;index"`
+	Name       string `gorm:"type:varchar(120);not null"`
+	Kind       string `gorm:"type:varchar(20);not null"`
+	Active     bool   `gorm:"not null;default:true"`
 }
 
-// Coach is a trainer managed by staff; coaches do not log in
+// Coach is a trainer managed by the business; coaches do not log in
 type Coach struct {
 	gorm.Model
-	Name     string  `gorm:"type:varchar(120);not null"`
-	Bio      string  `gorm:"type:text"`
-	Phone    string  `gorm:"type:varchar(20)"`
-	ImageKey string  `gorm:"type:varchar(255)"`
-	Active   bool    `gorm:"not null;default:true"`
-	Sports   []Sport `gorm:"many2many:coach_sports"`
+	BusinessID uint    `gorm:"not null;index"`
+	Name       string  `gorm:"type:varchar(120);not null"`
+	Bio        string  `gorm:"type:text"`
+	Phone      string  `gorm:"type:varchar(20)"`
+	ImageKey   string  `gorm:"type:varchar(255)"`
+	Active     bool    `gorm:"not null;default:true"`
+	Sports     []Sport `gorm:"many2many:coach_sports"`
 }

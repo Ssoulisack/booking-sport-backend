@@ -82,31 +82,31 @@ func validateEffective(e domain.EffectiveRule) error {
 	return nil
 }
 
-func (s *RuleServiceImpl) globalRule(ctx context.Context) (*domain.BookingRule, error) {
-	g, err := s.rules.GetByScope(ctx, domain.ScopeGlobal, 0)
+func (s *RuleServiceImpl) defaultRule(ctx context.Context, businessID uint) (*domain.BookingRule, error) {
+	r, err := s.rules.GetByScope(ctx, businessID, domain.ScopeDefault, 0)
 	if err != nil {
 		return nil, err
 	}
-	if g == nil {
-		return nil, response.NewError(http.StatusInternalServerError, "GLOBAL_RULE_MISSING")
+	if r == nil {
+		return nil, response.NewError(http.StatusInternalServerError, "DEFAULT_RULE_MISSING")
 	}
-	return g, nil
+	return r, nil
 }
 
-// checkScope validates the scope and returns the sport that applies to it (0 for global)
-func (s *RuleServiceImpl) checkScope(ctx context.Context, scopeType string, scopeID uint) (sportID uint, err error) {
+// checkScope validates the scope within the business and returns the sport that applies (0 for default)
+func (s *RuleServiceImpl) checkScope(ctx context.Context, businessID uint, scopeType string, scopeID uint) (sportID uint, err error) {
 	switch scopeType {
-	case domain.ScopeGlobal:
+	case domain.ScopeDefault:
 		if scopeID != 0 {
-			return 0, badRequest("GLOBAL_RULE_HAS_NO_ID")
+			return 0, badRequest("DEFAULT_RULE_HAS_NO_ID")
 		}
 	case domain.ScopeSport:
-		if _, err := s.sports.GetByID(ctx, scopeID); err != nil {
+		if _, err := s.sports.GetByID(ctx, businessID, scopeID); err != nil {
 			return 0, orBadRequest(err, "SPORT_NOT_FOUND")
 		}
 		return scopeID, nil
 	case domain.ScopeResource:
-		res, err := s.resources.GetByID(ctx, scopeID)
+		res, err := s.resources.GetByID(ctx, businessID, scopeID)
 		if err != nil {
 			return 0, orBadRequest(err, "RESOURCE_NOT_FOUND")
 		}
@@ -117,23 +117,23 @@ func (s *RuleServiceImpl) checkScope(ctx context.Context, scopeType string, scop
 	return 0, nil
 }
 
-func (s *RuleServiceImpl) GetRule(ctx context.Context, scopeType string, scopeID uint) (*dto.RuleDTO, error) {
-	if _, err := s.checkScope(ctx, scopeType, scopeID); err != nil {
+func (s *RuleServiceImpl) GetRule(ctx context.Context, businessID uint, scopeType string, scopeID uint) (*dto.RuleDTO, error) {
+	if _, err := s.checkScope(ctx, businessID, scopeType, scopeID); err != nil {
 		return nil, err
 	}
-	r, err := s.rules.GetByScope(ctx, scopeType, scopeID)
+	r, err := s.rules.GetByScope(ctx, businessID, scopeType, scopeID)
 	if err != nil {
 		return nil, err
 	}
 	if r == nil {
-		return nil, response.NewError(http.StatusNotFound, "RULE_NOT_FOUND")
+		return nil, notFound("RULE_NOT_FOUND")
 	}
 	d := toRuleDTO(*r)
 	return &d, nil
 }
 
-func (s *RuleServiceImpl) ListRules(ctx context.Context) ([]dto.RuleDTO, error) {
-	rules, err := s.rules.List(ctx)
+func (s *RuleServiceImpl) ListRules(ctx context.Context, businessID uint) ([]dto.RuleDTO, error) {
+	rules, err := s.rules.List(ctx, businessID)
 	if err != nil {
 		return nil, err
 	}
@@ -141,14 +141,14 @@ func (s *RuleServiceImpl) ListRules(ctx context.Context) ([]dto.RuleDTO, error) 
 }
 
 // SetRule replaces the rule of a scope. The merged result for that scope must stay valid.
-// Rules of narrower scopes are not re-checked here; Effective validates them when they are used.
-func (s *RuleServiceImpl) SetRule(ctx context.Context, scopeType string, scopeID uint, req dto.RuleRequest) (*dto.RuleDTO, error) {
-	sportID, err := s.checkScope(ctx, scopeType, scopeID)
+// Rules of narrower scopes are not re-checked here; Effective refuses them (409) when they are used.
+func (s *RuleServiceImpl) SetRule(ctx context.Context, businessID uint, scopeType string, scopeID uint, req dto.RuleRequest) (*dto.RuleDTO, error) {
+	sportID, err := s.checkScope(ctx, businessID, scopeType, scopeID)
 	if err != nil {
 		return nil, err
 	}
 	candidate := domain.BookingRule{
-		ScopeType: scopeType, ScopeID: scopeID,
+		BusinessID: businessID, ScopeType: scopeType, ScopeID: scopeID,
 		MinDurationMin: req.MinDurationMin, MaxDurationMin: req.MaxDurationMin,
 		DurationStepMin: req.DurationStepMin, StartStepMin: req.StartStepMin,
 		CancelBeforeHours: req.CancelBeforeHours, MaxDaysAhead: req.MaxDaysAhead,
@@ -156,18 +156,18 @@ func (s *RuleServiceImpl) SetRule(ctx context.Context, scopeType string, scopeID
 	}
 
 	var chain []*domain.BookingRule
-	if scopeType == domain.ScopeGlobal {
+	if scopeType == domain.ScopeDefault {
 		if !allSet(req) {
-			return nil, badRequest("GLOBAL_RULE_NEEDS_EVERY_FIELD")
+			return nil, badRequest("DEFAULT_RULE_NEEDS_EVERY_FIELD")
 		}
 	} else {
-		global, err := s.globalRule(ctx)
+		def, err := s.defaultRule(ctx, businessID)
 		if err != nil {
 			return nil, err
 		}
-		chain = append(chain, global)
+		chain = append(chain, def)
 		if scopeType == domain.ScopeResource {
-			sportRule, err := s.rules.GetByScope(ctx, domain.ScopeSport, sportID)
+			sportRule, err := s.rules.GetByScope(ctx, businessID, domain.ScopeSport, sportID)
 			if err != nil {
 				return nil, err
 			}
@@ -191,44 +191,44 @@ func allSet(r dto.RuleRequest) bool {
 		r.MinNoticeMin != nil && r.Capacity != nil
 }
 
-func (s *RuleServiceImpl) DeleteRule(ctx context.Context, scopeType string, scopeID uint) error {
-	if scopeType == domain.ScopeGlobal {
-		return badRequest("CANNOT_DELETE_GLOBAL_RULE")
+func (s *RuleServiceImpl) DeleteRule(ctx context.Context, businessID uint, scopeType string, scopeID uint) error {
+	if scopeType == domain.ScopeDefault {
+		return badRequest("CANNOT_DELETE_DEFAULT_RULE")
 	}
-	if _, err := s.checkScope(ctx, scopeType, scopeID); err != nil {
+	if _, err := s.checkScope(ctx, businessID, scopeType, scopeID); err != nil {
 		return err
 	}
-	return s.rules.DeleteByScope(ctx, scopeType, scopeID)
+	return s.rules.DeleteByScope(ctx, businessID, scopeType, scopeID)
 }
 
 // Effective returns the rule that applies to a resource (or to a sport when resourceID is 0)
-func (s *RuleServiceImpl) Effective(ctx context.Context, sportID, resourceID uint) (*domain.EffectiveRule, error) {
-	global, err := s.globalRule(ctx)
+func (s *RuleServiceImpl) Effective(ctx context.Context, businessID, sportID, resourceID uint) (*domain.EffectiveRule, error) {
+	def, err := s.defaultRule(ctx, businessID)
 	if err != nil {
 		return nil, err
 	}
-	chain := []*domain.BookingRule{global}
+	chain := []*domain.BookingRule{def}
 
 	if resourceID != 0 {
-		res, err := s.resources.GetByID(ctx, resourceID)
+		res, err := s.resources.GetByID(ctx, businessID, resourceID)
 		if err != nil {
 			return nil, orBadRequest(err, "RESOURCE_NOT_FOUND")
 		}
 		sportID = res.SportID
 	} else if sportID != 0 {
-		if _, err := s.sports.GetByID(ctx, sportID); err != nil {
+		if _, err := s.sports.GetByID(ctx, businessID, sportID); err != nil {
 			return nil, orBadRequest(err, "SPORT_NOT_FOUND")
 		}
 	}
 	if sportID != 0 {
-		r, err := s.rules.GetByScope(ctx, domain.ScopeSport, sportID)
+		r, err := s.rules.GetByScope(ctx, businessID, domain.ScopeSport, sportID)
 		if err != nil {
 			return nil, err
 		}
 		chain = append(chain, r)
 	}
 	if resourceID != 0 {
-		r, err := s.rules.GetByScope(ctx, domain.ScopeResource, resourceID)
+		r, err := s.rules.GetByScope(ctx, businessID, domain.ScopeResource, resourceID)
 		if err != nil {
 			return nil, err
 		}

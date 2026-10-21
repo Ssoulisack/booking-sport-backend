@@ -20,6 +20,7 @@ type ScheduleServiceImpl struct {
 	sports    output.SportRepository
 	resources output.ResourceRepository
 	coaches   output.CoachRepository
+	limits    *Limits
 }
 
 func NewScheduleService(
@@ -30,21 +31,23 @@ func NewScheduleService(
 	sports output.SportRepository,
 	resources output.ResourceRepository,
 	coaches output.CoachRepository,
+	limits *Limits,
 ) input.ScheduleService {
 	return &ScheduleServiceImpl{
 		hours: hours, closures: closures, prices: prices, classes: classes,
-		sports: sports, resources: resources, coaches: coaches,
+		sports: sports, resources: resources, coaches: coaches, limits: limits,
 	}
 }
 
-// requireOwner checks that the resource or coach exists. allowVenue also accepts the venue (id 0).
-func (s *ScheduleServiceImpl) requireOwner(ctx context.Context, ownerType string, ownerID uint, allowVenue bool) error {
+// requireOwner checks that the resource or coach exists in this business.
+// allowVenue also accepts the whole venue (id 0).
+func (s *ScheduleServiceImpl) requireOwner(ctx context.Context, businessID uint, ownerType string, ownerID uint, allowVenue bool) error {
 	switch ownerType {
 	case domain.OwnerResource:
-		_, err := s.resources.GetByID(ctx, ownerID)
+		_, err := s.resources.GetByID(ctx, businessID, ownerID)
 		return orBadRequest(err, "OWNER_NOT_FOUND")
 	case domain.OwnerCoach:
-		_, err := s.coaches.GetByID(ctx, ownerID)
+		_, err := s.coaches.GetByID(ctx, businessID, ownerID)
 		return orBadRequest(err, "OWNER_NOT_FOUND")
 	case domain.OwnerVenue:
 		if allowVenue && ownerID == 0 {
@@ -77,7 +80,7 @@ func parseClock(s string, allowMidnightEnd bool) (int, error) {
 }
 
 // buildOpeningHours validates a weekly schedule and converts it to domain rows
-func buildOpeningHours(ownerType string, ownerID uint, in []dto.OpeningHourDTO) ([]domain.OpeningHour, error) {
+func buildOpeningHours(businessID uint, ownerType string, ownerID uint, in []dto.OpeningHourDTO) ([]domain.OpeningHour, error) {
 	type span struct{ open, close int }
 	byDay := map[int][]span{}
 	rows := make([]domain.OpeningHour, 0, len(in))
@@ -99,7 +102,7 @@ func buildOpeningHours(ownerType string, ownerID uint, in []dto.OpeningHourDTO) 
 		}
 		byDay[h.Weekday] = append(byDay[h.Weekday], span{open, closeAt})
 		rows = append(rows, domain.OpeningHour{
-			OwnerType: ownerType, OwnerID: ownerID, Weekday: h.Weekday,
+			BusinessID: businessID, OwnerType: ownerType, OwnerID: ownerID, Weekday: h.Weekday,
 			OpenTime: clockString(open), CloseTime: clockString(closeAt),
 		})
 	}
@@ -120,11 +123,11 @@ func toOpeningHourDTO(h domain.OpeningHour) dto.OpeningHourDTO {
 	return dto.OpeningHourDTO{Weekday: h.Weekday, Open: h.OpenTime, Close: h.CloseTime}
 }
 
-func (s *ScheduleServiceImpl) GetOpeningHours(ctx context.Context, ownerType string, ownerID uint) ([]dto.OpeningHourDTO, error) {
-	if err := s.requireOwner(ctx, ownerType, ownerID, false); err != nil {
+func (s *ScheduleServiceImpl) GetOpeningHours(ctx context.Context, businessID uint, ownerType string, ownerID uint) ([]dto.OpeningHourDTO, error) {
+	if err := s.requireOwner(ctx, businessID, ownerType, ownerID, false); err != nil {
 		return nil, err
 	}
-	rows, err := s.hours.ListByOwner(ctx, ownerType, ownerID)
+	rows, err := s.hours.ListByOwner(ctx, businessID, ownerType, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -132,18 +135,18 @@ func (s *ScheduleServiceImpl) GetOpeningHours(ctx context.Context, ownerType str
 }
 
 // SetOpeningHours replaces the whole weekly schedule; an empty list means "never open"
-func (s *ScheduleServiceImpl) SetOpeningHours(ctx context.Context, ownerType string, ownerID uint, req dto.OpeningHoursRequest) ([]dto.OpeningHourDTO, error) {
-	if err := s.requireOwner(ctx, ownerType, ownerID, false); err != nil {
+func (s *ScheduleServiceImpl) SetOpeningHours(ctx context.Context, businessID uint, ownerType string, ownerID uint, req dto.OpeningHoursRequest) ([]dto.OpeningHourDTO, error) {
+	if err := s.requireOwner(ctx, businessID, ownerType, ownerID, false); err != nil {
 		return nil, err
 	}
-	rows, err := buildOpeningHours(ownerType, ownerID, req.Hours)
+	rows, err := buildOpeningHours(businessID, ownerType, ownerID, req.Hours)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.hours.ReplaceForOwner(ctx, ownerType, ownerID, rows); err != nil {
+	if err := s.hours.ReplaceForOwner(ctx, businessID, ownerType, ownerID, rows); err != nil {
 		return nil, err
 	}
-	return s.GetOpeningHours(ctx, ownerType, ownerID)
+	return s.GetOpeningHours(ctx, businessID, ownerType, ownerID)
 }
 
 // ---------- closures ----------
@@ -155,22 +158,22 @@ func toClosureDTO(m domain.Closure) dto.ClosureDTO {
 	}
 }
 
-func (s *ScheduleServiceImpl) validateClosure(ctx context.Context, req *dto.ClosureRequest) error {
+func (s *ScheduleServiceImpl) validateClosure(ctx context.Context, businessID uint, req *dto.ClosureRequest) error {
 	if req.StartsAt.IsZero() || req.EndsAt.IsZero() {
 		return badRequest("STARTS_AT_AND_ENDS_AT_ARE_REQUIRED")
 	}
 	if !req.EndsAt.After(req.StartsAt) {
 		return badRequest("ENDS_AT_MUST_BE_AFTER_STARTS_AT")
 	}
-	return s.requireOwner(ctx, req.OwnerType, req.OwnerID, true)
+	return s.requireOwner(ctx, businessID, req.OwnerType, req.OwnerID, true)
 }
 
-func (s *ScheduleServiceImpl) CreateClosure(ctx context.Context, req dto.ClosureRequest) (*dto.ClosureDTO, error) {
-	if err := s.validateClosure(ctx, &req); err != nil {
+func (s *ScheduleServiceImpl) CreateClosure(ctx context.Context, businessID uint, req dto.ClosureRequest) (*dto.ClosureDTO, error) {
+	if err := s.validateClosure(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
 	m := domain.Closure{
-		OwnerType: req.OwnerType, OwnerID: req.OwnerID,
+		BusinessID: businessID, OwnerType: req.OwnerType, OwnerID: req.OwnerID,
 		StartsAt: req.StartsAt, EndsAt: req.EndsAt, Reason: req.Reason,
 	}
 	if err := s.closures.Create(ctx, &m); err != nil {
@@ -180,8 +183,8 @@ func (s *ScheduleServiceImpl) CreateClosure(ctx context.Context, req dto.Closure
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) GetClosure(ctx context.Context, id uint) (*dto.ClosureDTO, error) {
-	m, err := s.closures.GetByID(ctx, id)
+func (s *ScheduleServiceImpl) GetClosure(ctx context.Context, businessID, id uint) (*dto.ClosureDTO, error) {
+	m, err := s.closures.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -189,24 +192,24 @@ func (s *ScheduleServiceImpl) GetClosure(ctx context.Context, id uint) (*dto.Clo
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) ListClosures(ctx context.Context, q dto.ListQuery) (*dto.PagedResult[dto.ClosureDTO], error) {
+func (s *ScheduleServiceImpl) ListClosures(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.ClosureDTO], error) {
 	lq, page, limit := newListQuery(q)
 	if q.OwnerType != "" {
 		lq.Filters["owner_type"] = q.OwnerType
 		lq.Filters["owner_id"] = q.OwnerID
 	}
-	items, total, err := s.closures.List(ctx, lq)
+	items, total, err := s.closures.List(ctx, businessID, lq)
 	if err != nil {
 		return nil, err
 	}
 	return pageOf(items, total, page, limit, toClosureDTO), nil
 }
 
-func (s *ScheduleServiceImpl) UpdateClosure(ctx context.Context, id uint, req dto.ClosureRequest) (*dto.ClosureDTO, error) {
-	if err := s.validateClosure(ctx, &req); err != nil {
+func (s *ScheduleServiceImpl) UpdateClosure(ctx context.Context, businessID, id uint, req dto.ClosureRequest) (*dto.ClosureDTO, error) {
+	if err := s.validateClosure(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
-	m, err := s.closures.GetByID(ctx, id)
+	m, err := s.closures.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -218,8 +221,8 @@ func (s *ScheduleServiceImpl) UpdateClosure(ctx context.Context, id uint, req dt
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) DeleteClosure(ctx context.Context, id uint) error {
-	return s.closures.Delete(ctx, id)
+func (s *ScheduleServiceImpl) DeleteClosure(ctx context.Context, businessID, id uint) error {
+	return s.closures.Delete(ctx, businessID, id)
 }
 
 // ---------- prices ----------
@@ -228,11 +231,11 @@ func toPriceDTO(m domain.Price) dto.PriceDTO {
 	return dto.PriceDTO{OwnerType: m.OwnerType, OwnerID: m.OwnerID, PricePerHour: m.PricePerHour, Currency: m.Currency}
 }
 
-func (s *ScheduleServiceImpl) GetPrice(ctx context.Context, ownerType string, ownerID uint) (*dto.PriceDTO, error) {
-	if err := s.requireOwner(ctx, ownerType, ownerID, false); err != nil {
+func (s *ScheduleServiceImpl) GetPrice(ctx context.Context, businessID uint, ownerType string, ownerID uint) (*dto.PriceDTO, error) {
+	if err := s.requireOwner(ctx, businessID, ownerType, ownerID, false); err != nil {
 		return nil, err
 	}
-	m, err := s.prices.GetByOwner(ctx, ownerType, ownerID)
+	m, err := s.prices.GetByOwner(ctx, businessID, ownerType, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -240,8 +243,8 @@ func (s *ScheduleServiceImpl) GetPrice(ctx context.Context, ownerType string, ow
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) SetPrice(ctx context.Context, ownerType string, ownerID uint, req dto.PriceRequest) (*dto.PriceDTO, error) {
-	if err := s.requireOwner(ctx, ownerType, ownerID, false); err != nil {
+func (s *ScheduleServiceImpl) SetPrice(ctx context.Context, businessID uint, ownerType string, ownerID uint, req dto.PriceRequest) (*dto.PriceDTO, error) {
+	if err := s.requireOwner(ctx, businessID, ownerType, ownerID, false); err != nil {
 		return nil, err
 	}
 	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
@@ -251,7 +254,10 @@ func (s *ScheduleServiceImpl) SetPrice(ctx context.Context, ownerType string, ow
 	if !validCurrency(req.Currency) {
 		return nil, badRequest("INVALID_CURRENCY")
 	}
-	m := domain.Price{OwnerType: ownerType, OwnerID: ownerID, PricePerHour: req.PricePerHour, Currency: req.Currency}
+	m := domain.Price{
+		BusinessID: businessID, OwnerType: ownerType, OwnerID: ownerID,
+		PricePerHour: req.PricePerHour, Currency: req.Currency,
+	}
 	if err := s.prices.Upsert(ctx, &m); err != nil {
 		return nil, err
 	}
@@ -259,11 +265,11 @@ func (s *ScheduleServiceImpl) SetPrice(ctx context.Context, ownerType string, ow
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) DeletePrice(ctx context.Context, ownerType string, ownerID uint) error {
-	if err := s.requireOwner(ctx, ownerType, ownerID, false); err != nil {
+func (s *ScheduleServiceImpl) DeletePrice(ctx context.Context, businessID uint, ownerType string, ownerID uint) error {
+	if err := s.requireOwner(ctx, businessID, ownerType, ownerID, false); err != nil {
 		return err
 	}
-	return s.prices.DeleteByOwner(ctx, ownerType, ownerID)
+	return s.prices.DeleteByOwner(ctx, businessID, ownerType, ownerID)
 }
 
 // ---------- class sessions ----------
@@ -278,7 +284,7 @@ func toClassSessionDTO(m domain.ClassSession) dto.ClassSessionDTO {
 
 // validateClassSession checks the fields and that the coach and resource fit the sport.
 // Clashes with other bookings on the same resource or coach are checked by the booking engine.
-func (s *ScheduleServiceImpl) validateClassSession(ctx context.Context, req *dto.ClassSessionRequest) error {
+func (s *ScheduleServiceImpl) validateClassSession(ctx context.Context, businessID uint, req *dto.ClassSessionRequest) error {
 	req.Title = strings.TrimSpace(req.Title)
 	req.Currency = strings.ToUpper(strings.TrimSpace(req.Currency))
 	switch {
@@ -295,11 +301,11 @@ func (s *ScheduleServiceImpl) validateClassSession(ctx context.Context, req *dto
 	case !validCurrency(req.Currency):
 		return badRequest("INVALID_CURRENCY")
 	}
-	if _, err := s.sports.GetByID(ctx, req.SportID); err != nil {
+	if _, err := s.sports.GetByID(ctx, businessID, req.SportID); err != nil {
 		return orBadRequest(err, "SPORT_NOT_FOUND")
 	}
 	if req.ResourceID != nil {
-		res, err := s.resources.GetByID(ctx, *req.ResourceID)
+		res, err := s.resources.GetByID(ctx, businessID, *req.ResourceID)
 		if err != nil {
 			return orBadRequest(err, "RESOURCE_NOT_FOUND")
 		}
@@ -308,7 +314,7 @@ func (s *ScheduleServiceImpl) validateClassSession(ctx context.Context, req *dto
 		}
 	}
 	if req.CoachID != nil {
-		coach, err := s.coaches.GetByID(ctx, *req.CoachID)
+		coach, err := s.coaches.GetByID(ctx, businessID, *req.CoachID)
 		if err != nil {
 			return orBadRequest(err, "COACH_NOT_FOUND")
 		}
@@ -323,13 +329,16 @@ func (s *ScheduleServiceImpl) validateClassSession(ctx context.Context, req *dto
 	return nil
 }
 
-func (s *ScheduleServiceImpl) CreateClassSession(ctx context.Context, req dto.ClassSessionRequest) (*dto.ClassSessionDTO, error) {
-	if err := s.validateClassSession(ctx, &req); err != nil {
+func (s *ScheduleServiceImpl) CreateClassSession(ctx context.Context, businessID uint, req dto.ClassSessionRequest) (*dto.ClassSessionDTO, error) {
+	if err := s.validateClassSession(ctx, businessID, &req); err != nil {
+		return nil, err
+	}
+	if err := s.limits.CheckClassSession(ctx, businessID, req.StartsAt); err != nil {
 		return nil, err
 	}
 	m := domain.ClassSession{
-		SportID: req.SportID, CoachID: req.CoachID, ResourceID: req.ResourceID, Title: req.Title,
-		StartsAt: req.StartsAt, EndsAt: req.EndsAt, Capacity: req.Capacity,
+		BusinessID: businessID, SportID: req.SportID, CoachID: req.CoachID, ResourceID: req.ResourceID,
+		Title: req.Title, StartsAt: req.StartsAt, EndsAt: req.EndsAt, Capacity: req.Capacity,
 		Price: req.Price, Currency: req.Currency, Active: isActive(req.Active),
 	}
 	if err := s.classes.Create(ctx, &m); err != nil {
@@ -339,8 +348,8 @@ func (s *ScheduleServiceImpl) CreateClassSession(ctx context.Context, req dto.Cl
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) GetClassSession(ctx context.Context, id uint) (*dto.ClassSessionDTO, error) {
-	m, err := s.classes.GetByID(ctx, id)
+func (s *ScheduleServiceImpl) GetClassSession(ctx context.Context, businessID, id uint) (*dto.ClassSessionDTO, error) {
+	m, err := s.classes.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +357,7 @@ func (s *ScheduleServiceImpl) GetClassSession(ctx context.Context, id uint) (*dt
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) ListClassSessions(ctx context.Context, q dto.ListQuery) (*dto.PagedResult[dto.ClassSessionDTO], error) {
+func (s *ScheduleServiceImpl) ListClassSessions(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.ClassSessionDTO], error) {
 	lq, page, limit := newListQuery(q)
 	if q.SportID != 0 {
 		lq.Filters["sport_id"] = q.SportID
@@ -356,19 +365,22 @@ func (s *ScheduleServiceImpl) ListClassSessions(ctx context.Context, q dto.ListQ
 	if q.Active != nil {
 		lq.Filters["active"] = *q.Active
 	}
-	items, total, err := s.classes.List(ctx, lq)
+	items, total, err := s.classes.List(ctx, businessID, lq)
 	if err != nil {
 		return nil, err
 	}
 	return pageOf(items, total, page, limit, toClassSessionDTO), nil
 }
 
-func (s *ScheduleServiceImpl) UpdateClassSession(ctx context.Context, id uint, req dto.ClassSessionRequest) (*dto.ClassSessionDTO, error) {
-	if err := s.validateClassSession(ctx, &req); err != nil {
+func (s *ScheduleServiceImpl) UpdateClassSession(ctx context.Context, businessID, id uint, req dto.ClassSessionRequest) (*dto.ClassSessionDTO, error) {
+	if err := s.validateClassSession(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
-	m, err := s.classes.GetByID(ctx, id)
+	m, err := s.classes.GetByID(ctx, businessID, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.limits.CheckClassSessionMove(ctx, businessID, m.StartsAt, req.StartsAt); err != nil {
 		return nil, err
 	}
 	m.SportID, m.CoachID, m.ResourceID, m.Title = req.SportID, req.CoachID, req.ResourceID, req.Title
@@ -381,6 +393,6 @@ func (s *ScheduleServiceImpl) UpdateClassSession(ctx context.Context, id uint, r
 	return &d, nil
 }
 
-func (s *ScheduleServiceImpl) DeleteClassSession(ctx context.Context, id uint) error {
-	return s.classes.Delete(ctx, id)
+func (s *ScheduleServiceImpl) DeleteClassSession(ctx context.Context, businessID, id uint) error {
+	return s.classes.Delete(ctx, businessID, id)
 }

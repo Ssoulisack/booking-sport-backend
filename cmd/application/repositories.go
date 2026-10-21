@@ -18,19 +18,28 @@ type AppRepositories struct {
 	// mysql    mysql.MySQLRepository
 	redis    redis.CacheRepository
 	minio    minio.MinIORepository
-	mailer   mailer.MailerRepository
+	mailer   output.Mailer
 	postgres postgres.PostgresRepository
 	storage  output.FileStorage
+	// app settings the services need (links in emails)
+	app config.AppConfig
 	// Domain repositories
-	user          output.UserRepository
-	sports        output.SportRepository
-	resources     output.ResourceRepository
-	coaches       output.CoachRepository
-	openingHours  output.OpeningHourRepository
-	closures      output.ClosureRepository
-	prices        output.PriceRepository
-	classSessions output.ClassSessionRepository
-	rules         output.RuleRepository
+	user           output.UserRepository
+	plans          output.PlanRepository
+	businesses     output.BusinessRepository
+	memberships    output.MembershipRepository
+	invitations    output.InvitationRepository
+	passwordResets output.PasswordResetRepository
+	media          output.MediaRepository
+	supportVisits  output.SupportVisitRepository
+	sports         output.SportRepository
+	resources      output.ResourceRepository
+	coaches        output.CoachRepository
+	openingHours   output.OpeningHourRepository
+	closures       output.ClosureRepository
+	prices         output.PriceRepository
+	classSessions  output.ClassSessionRepository
+	rules          output.RuleRepository
 }
 
 // setupRepositories initializes all data storage connections
@@ -58,31 +67,35 @@ func SetupRepositories(cfg *config.Config) *AppRepositories {
 	if err != nil {
 		log.Fatalf("❌ Failed to initialize MinIO repository: %v", err)
 	}
-	// Mailer setup
-	mailerRepo := mailer.NewMailerRepository(cfg.Mailer)
 
 	// Domain repositories
 	db := postgresRepo.GetDB()
-	userRepo := postgres.NewUserRepository(db)
 
 	return &AppRepositories{
 		// mysql:  mysqlRepo,
-		redis:         redisRepo,
-		minio:         minioRepo,
-		storage:       storage.NewSupabaseStorage(cfg.Storage),
-		user:          userRepo,
-		mailer:        mailerRepo,
-		postgres:      postgresRepo,
-		sports:        postgres.NewCRUDRepository[domain.Sport](db, "name"),
-		resources:     postgres.NewCRUDRepository[domain.Resource](db, "name"),
-		coaches:       postgres.NewCoachRepository(db),
-		openingHours:  postgres.NewOpeningHourRepository(db),
-		closures:      postgres.NewCRUDRepository[domain.Closure](db, ""),
-		prices:        postgres.NewPriceRepository(db),
-		classSessions: postgres.NewCRUDRepository[domain.ClassSession](db, "title"),
-		rules:         postgres.NewRuleRepository(db),
+		redis:          redisRepo,
+		minio:          minioRepo,
+		mailer:         mailer.NewPlatformMailer(cfg.Mailer, cfg.App.Name),
+		postgres:       postgresRepo,
+		storage:        storage.NewSupabaseStorage(cfg.Storage),
+		app:            cfg.App,
+		user:           postgres.NewUserRepository(db),
+		plans:          postgres.NewPlanRepository(db),
+		businesses:     postgres.NewBusinessRepository(db),
+		memberships:    postgres.NewMembershipRepository(db),
+		invitations:    postgres.NewInvitationRepository(db),
+		passwordResets: postgres.NewPasswordResetRepository(db),
+		media:          postgres.NewMediaRepository(db),
+		supportVisits:  postgres.NewSupportVisitRepository(db),
+		sports:         postgres.NewScopedRepository[domain.Sport](db, "name"),
+		resources:      postgres.NewScopedRepository[domain.Resource](db, "name"),
+		coaches:        postgres.NewCoachRepository(db),
+		openingHours:   postgres.NewOpeningHourRepository(db),
+		closures:       postgres.NewScopedRepository[domain.Closure](db, ""),
+		prices:         postgres.NewPriceRepository(db),
+		classSessions:  postgres.NewClassSessionRepository(db),
+		rules:          postgres.NewRuleRepository(db),
 	}
-
 }
 
 // closeRepositories gracefully closes all connections

@@ -21,6 +21,15 @@ services:
     volumes:
       - ./data/redis_data:/data
 
+  # Development only: catches every email; inbox at http://localhost:8025, SMTP on port 1025
+  mailpit:
+    image: axllent/mailpit:v1.20.0
+    container_name: mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
 volumes:
   postgres_data:
   redis_data:

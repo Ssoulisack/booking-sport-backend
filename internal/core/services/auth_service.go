@@ -11,49 +11,74 @@ import (
 	"backend/pkg/utils"
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"net/mail"
 	"strings"
 	"time"
 )
 
-const minPasswordLength = 8
+const (
+	minPasswordLength = 8
+	resetTokenTTL     = time.Hour
+)
 
 type AuthServiceImpl struct {
-	userRepo  output.UserRepository
-	cacheRepo redis.CacheRepository
+	userRepo    output.UserRepository
+	cacheRepo   redis.CacheRepository
+	memberships output.MembershipRepository
+	resets      output.PasswordResetRepository
+	mailer      output.Mailer
+	frontendURL string
+	now         func() time.Time
 }
 
 func NewAuthService(
 	userRepo output.UserRepository,
 	cacheRepo redis.CacheRepository,
+	memberships output.MembershipRepository,
+	resets output.PasswordResetRepository,
+	mailer output.Mailer,
+	frontendURL string,
 ) input.AuthService {
 	return &AuthServiceImpl{
-		userRepo:  userRepo,
-		cacheRepo: cacheRepo,
+		userRepo:    userRepo,
+		cacheRepo:   cacheRepo,
+		memberships: memberships,
+		resets:      resets,
+		mailer:      mailer,
+		frontendURL: strings.TrimRight(frontendURL, "/"),
+		now:         time.Now,
 	}
 }
 
-// Register creates a client account; staff and admin accounts are created by an admin
+// Register creates a customer account. Business members join through invitations.
 func (s *AuthServiceImpl) Register(ctx context.Context, req dto.RegisterDTO) (*dto.AuthResponseDTO, error) {
-	user, err := createUser(ctx, s.userRepo, req, domain.RoleClient)
+	user, err := createUser(ctx, s.userRepo, req)
 	if err != nil {
 		return nil, err
 	}
 	return issueTokens(user)
 }
 
-// createUser validates a registration and stores the account with the given role
-func createUser(ctx context.Context, repo output.UserRepository, req dto.RegisterDTO, roleID uint) (*domain.User, error) {
+func validPassword(password string) error {
+	if len(password) < minPasswordLength {
+		return badRequest("PASSWORD_TOO_SHORT")
+	}
+	return nil
+}
+
+// createUser validates a registration and stores a plain account (no platform role)
+func createUser(ctx context.Context, repo output.UserRepository, req dto.RegisterDTO) (*domain.User, error) {
 	email := normalizeEmail(req.Email)
 	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
-		return nil, response.ErrorBadRequest("INVALID_EMAIL")
+		return nil, badRequest("INVALID_EMAIL")
 	}
 	if strings.TrimSpace(req.Name) == "" {
-		return nil, response.ErrorBadRequest("NAME_IS_REQUIRED")
+		return nil, badRequest("NAME_IS_REQUIRED")
 	}
-	if len(req.Password) < minPasswordLength {
-		return nil, response.ErrorBadRequest("PASSWORD_TOO_SHORT")
+	if err := validPassword(req.Password); err != nil {
+		return nil, err
 	}
 
 	exists, err := repo.ExistsByEmail(ctx, email)
@@ -61,7 +86,7 @@ func createUser(ctx context.Context, repo output.UserRepository, req dto.Registe
 		return nil, err
 	}
 	if exists {
-		return nil, response.NewError(http.StatusConflict, "EMAIL_ALREADY_REGISTERED")
+		return nil, conflict("EMAIL_ALREADY_REGISTERED")
 	}
 
 	hash, err := utils.Encrypt(req.Password)
@@ -74,7 +99,6 @@ func createUser(ctx context.Context, repo output.UserRepository, req dto.Registe
 		Name:         strings.TrimSpace(req.Name),
 		Phone:        strings.TrimSpace(req.Phone),
 		PasswordHash: hash,
-		RoleID:       roleID,
 		Status:       true,
 		LastActive:   time.Now(),
 	}
@@ -98,19 +122,30 @@ func (s *AuthServiceImpl) Login(ctx context.Context, req dto.LoginDTO) (*dto.Aut
 		return nil, invalid
 	}
 	if !user.Status {
-		return nil, response.NewError(http.StatusForbidden, "ACCOUNT_DISABLED")
+		return nil, forbidden("ACCOUNT_DISABLED")
 	}
 	return issueTokens(user)
 }
 
-// Refresh re-reads the user so a changed role or a disabled account takes effect
-func (s *AuthServiceImpl) Refresh(ctx context.Context, userID uint) (*dto.AuthResponseDTO, error) {
+// checkUsable refuses disabled accounts and tokens issued before the last password reset
+func checkUsable(u *domain.User, issuedAt int64) error {
+	if !u.Status {
+		return forbidden("ACCOUNT_DISABLED")
+	}
+	if u.PasswordChangedAt != nil && issuedAt < u.PasswordChangedAt.Unix() {
+		return response.NewError(http.StatusUnauthorized, "TOKEN_REVOKED")
+	}
+	return nil
+}
+
+// Refresh re-reads the user so a disabled account or a password reset takes effect
+func (s *AuthServiceImpl) Refresh(ctx context.Context, userID uint, issuedAt int64) (*dto.AuthResponseDTO, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if !user.Status {
-		return nil, response.NewError(http.StatusForbidden, "ACCOUNT_DISABLED")
+	if err := checkUsable(user, issuedAt); err != nil {
+		return nil, err
 	}
 	return issueTokens(user)
 }
@@ -124,8 +159,72 @@ func (s *AuthServiceImpl) Me(ctx context.Context, userID uint) (*dto.UserDTO, er
 	return &d, nil
 }
 
+func (s *AuthServiceImpl) MyBusinesses(ctx context.Context, userID uint) ([]dto.MyBusinessDTO, error) {
+	memberships, err := s.memberships.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return mapSlice(memberships, func(m domain.Membership) dto.MyBusinessDTO {
+		return dto.MyBusinessDTO{
+			BusinessID: m.BusinessID, Name: m.Business.Name, Slug: m.Business.Slug,
+			Status: m.Business.Status(), Role: m.Role, Active: m.Active,
+		}
+	}), nil
+}
+
+// ForgotPassword emails a one-hour reset link. Unknown or disabled accounts get no email,
+// but the caller sees the same answer either way.
+func (s *AuthServiceImpl) ForgotPassword(ctx context.Context, email string) error {
+	user, err := s.userRepo.FindByEmail(ctx, normalizeEmail(email))
+	if err != nil {
+		if isNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	if !user.Status {
+		return nil
+	}
+	raw, hash, err := newToken()
+	if err != nil {
+		return err
+	}
+	reset := domain.PasswordReset{UserID: user.ID, TokenHash: hash, ExpiresAt: s.now().Add(resetTokenTTL)}
+	if err := s.resets.Create(ctx, &reset); err != nil {
+		return err
+	}
+	if err := s.mailer.SendPasswordReset(user.Email, user.Name, s.frontendURL+"/reset-password/"+raw); err != nil {
+		log.Printf("❌ password reset email to user %d failed: %v", user.ID, err)
+	}
+	return nil
+}
+
+// ResetPassword sets a new password from a valid link; every older token stops working
+func (s *AuthServiceImpl) ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error {
+	if err := validPassword(req.Password); err != nil {
+		return err
+	}
+	reset, err := s.resets.GetByTokenHash(ctx, hashToken(req.Token))
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	if reset == nil || reset.UsedAt != nil || now.After(reset.ExpiresAt) {
+		return badRequest("INVALID_OR_EXPIRED_TOKEN")
+	}
+	hash, err := utils.Encrypt(req.Password)
+	if err != nil {
+		return err
+	}
+	if err := s.userRepo.SetPassword(ctx, reset.UserID, hash, now); err != nil {
+		return err
+	}
+	return s.resets.UseAll(ctx, reset.UserID, now)
+}
+
 func issueTokens(user *domain.User) (*dto.AuthResponseDTO, error) {
-	pair, err := jwt.GenerateJWTToken(int(user.ID), int(user.RoleID))
+	// role claim unused: roles are read from the database on every request
+	pair, err := jwt.GenerateJWTToken(int(user.ID), 0)
 	if err != nil {
 		return nil, err
 	}
@@ -139,16 +238,16 @@ func issueTokens(user *domain.User) (*dto.AuthResponseDTO, error) {
 
 func toUserDTO(u *domain.User) dto.UserDTO {
 	return dto.UserDTO{
-		ID:        u.ID,
-		Email:     u.Email,
-		Avatar:    u.Avatar,
-		Name:      u.Name,
-		Username:  u.Username,
-		Phone:     u.Phone,
-		RoleID:    u.RoleID,
-		Status:    u.Status,
-		CreatedAt: u.CreatedAt.Format(time.RFC3339),
-		UpdatedAt: u.UpdatedAt.Format(time.RFC3339),
+		ID:           u.ID,
+		Email:        u.Email,
+		Avatar:       u.Avatar,
+		Name:         u.Name,
+		Username:     u.Username,
+		Phone:        u.Phone,
+		PlatformRole: u.PlatformRole,
+		Status:       u.Status,
+		CreatedAt:    u.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:    u.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

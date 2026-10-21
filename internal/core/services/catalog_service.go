@@ -14,7 +14,8 @@ type CatalogServiceImpl struct {
 	sports    output.SportRepository
 	resources output.ResourceRepository
 	coaches   output.CoachRepository
-	storage   output.FileStorage
+	files     mediaFiles
+	limits    *Limits
 }
 
 func NewCatalogService(
@@ -22,8 +23,13 @@ func NewCatalogService(
 	resources output.ResourceRepository,
 	coaches output.CoachRepository,
 	storage output.FileStorage,
+	media output.MediaRepository,
+	limits *Limits,
 ) input.CatalogService {
-	return &CatalogServiceImpl{sports: sports, resources: resources, coaches: coaches, storage: storage}
+	return &CatalogServiceImpl{
+		sports: sports, resources: resources, coaches: coaches,
+		files: mediaFiles{storage: storage, media: media}, limits: limits,
+	}
 }
 
 var resourceKinds = map[string]bool{
@@ -38,35 +44,35 @@ var resourceKinds = map[string]bool{
 func (s *CatalogServiceImpl) toSportDTO(m domain.Sport) dto.SportDTO {
 	return dto.SportDTO{
 		ID: m.ID, Name: m.Name, Slug: m.Slug, Description: m.Description,
-		ImageKey: m.ImageKey, ImageURL: s.storage.URL(m.ImageKey), Active: m.Active,
+		ImageKey: m.ImageKey, ImageURL: s.files.url(m.ImageKey), Active: m.Active,
 	}
 }
 
-func validateSport(req *dto.SportRequest) error {
+func (s *CatalogServiceImpl) validateSport(ctx context.Context, businessID uint, req *dto.SportRequest) error {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		return badRequest("NAME_IS_REQUIRED")
 	}
-	if req.ImageKey != "" && !isValidMediaKey(req.ImageKey) {
-		return badRequest("INVALID_FILE_KEY")
-	}
-	return nil
+	return s.files.requireOwned(ctx, businessID, req.ImageKey)
 }
 
-func (s *CatalogServiceImpl) CreateSport(ctx context.Context, req dto.SportRequest) (*dto.SportDTO, error) {
-	if err := validateSport(&req); err != nil {
+func (s *CatalogServiceImpl) CreateSport(ctx context.Context, businessID uint, req dto.SportRequest) (*dto.SportDTO, error) {
+	if err := s.validateSport(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
-	slug := slugify(req.Name)
-	existing, _, err := s.sports.List(ctx, output.ListQuery{Page: 1, Limit: 1, Filters: map[string]any{"slug": slug}})
+	slug := slugify(req.Name, "sport")
+	taken, err := s.sports.Count(ctx, businessID, map[string]any{"slug": slug})
 	if err != nil {
 		return nil, err
 	}
-	if len(existing) > 0 {
+	if taken > 0 {
 		return nil, conflict("SPORT_ALREADY_EXISTS")
 	}
+	if err := s.limits.CheckSports(ctx, businessID); err != nil {
+		return nil, err
+	}
 	m := domain.Sport{
-		Name: req.Name, Slug: slug, Description: req.Description,
+		BusinessID: businessID, Name: req.Name, Slug: slug, Description: req.Description,
 		ImageKey: req.ImageKey, Active: isActive(req.Active),
 	}
 	if err := s.sports.Create(ctx, &m); err != nil {
@@ -76,8 +82,8 @@ func (s *CatalogServiceImpl) CreateSport(ctx context.Context, req dto.SportReque
 	return &d, nil
 }
 
-func (s *CatalogServiceImpl) GetSport(ctx context.Context, id uint) (*dto.SportDTO, error) {
-	m, err := s.sports.GetByID(ctx, id)
+func (s *CatalogServiceImpl) GetSport(ctx context.Context, businessID, id uint) (*dto.SportDTO, error) {
+	m, err := s.sports.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -85,12 +91,12 @@ func (s *CatalogServiceImpl) GetSport(ctx context.Context, id uint) (*dto.SportD
 	return &d, nil
 }
 
-func (s *CatalogServiceImpl) ListSports(ctx context.Context, q dto.ListQuery) (*dto.PagedResult[dto.SportDTO], error) {
+func (s *CatalogServiceImpl) ListSports(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.SportDTO], error) {
 	lq, page, limit := newListQuery(q)
 	if q.Active != nil {
 		lq.Filters["active"] = *q.Active
 	}
-	items, total, err := s.sports.List(ctx, lq)
+	items, total, err := s.sports.List(ctx, businessID, lq)
 	if err != nil {
 		return nil, err
 	}
@@ -98,11 +104,11 @@ func (s *CatalogServiceImpl) ListSports(ctx context.Context, q dto.ListQuery) (*
 }
 
 // UpdateSport keeps the slug stable so public URLs do not change when a sport is renamed
-func (s *CatalogServiceImpl) UpdateSport(ctx context.Context, id uint, req dto.SportRequest) (*dto.SportDTO, error) {
-	if err := validateSport(&req); err != nil {
+func (s *CatalogServiceImpl) UpdateSport(ctx context.Context, businessID, id uint, req dto.SportRequest) (*dto.SportDTO, error) {
+	if err := s.validateSport(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
-	m, err := s.sports.GetByID(ctx, id)
+	m, err := s.sports.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -111,27 +117,27 @@ func (s *CatalogServiceImpl) UpdateSport(ctx context.Context, id uint, req dto.S
 	if err := s.sports.Update(ctx, m); err != nil {
 		return nil, err
 	}
-	s.removeReplacedImage(ctx, oldKey, m.ImageKey)
+	s.files.replaced(ctx, businessID, oldKey, m.ImageKey)
 	d := s.toSportDTO(*m)
 	return &d, nil
 }
 
-func (s *CatalogServiceImpl) DeleteSport(ctx context.Context, id uint) error {
-	m, err := s.sports.GetByID(ctx, id)
+func (s *CatalogServiceImpl) DeleteSport(ctx context.Context, businessID, id uint) error {
+	m, err := s.sports.GetByID(ctx, businessID, id)
 	if err != nil {
 		return err
 	}
-	inUse, _, err := s.resources.List(ctx, output.ListQuery{Page: 1, Limit: 1, Filters: map[string]any{"sport_id": id}})
+	inUse, err := s.resources.Count(ctx, businessID, map[string]any{"sport_id": id})
 	if err != nil {
 		return err
 	}
-	if len(inUse) > 0 {
+	if inUse > 0 {
 		return conflict("SPORT_HAS_RESOURCES")
 	}
-	if err := s.sports.Delete(ctx, id); err != nil {
+	if err := s.sports.Delete(ctx, businessID, id); err != nil {
 		return err
 	}
-	s.removeReplacedImage(ctx, m.ImageKey, "")
+	s.files.replaced(ctx, businessID, m.ImageKey, "")
 	return nil
 }
 
@@ -141,7 +147,7 @@ func toResourceDTO(m domain.Resource) dto.ResourceDTO {
 	return dto.ResourceDTO{ID: m.ID, SportID: m.SportID, Name: m.Name, Kind: m.Kind, Active: m.Active}
 }
 
-func (s *CatalogServiceImpl) validateResource(ctx context.Context, req *dto.ResourceRequest) error {
+func (s *CatalogServiceImpl) validateResource(ctx context.Context, businessID uint, req *dto.ResourceRequest) error {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		return badRequest("NAME_IS_REQUIRED")
@@ -149,15 +155,18 @@ func (s *CatalogServiceImpl) validateResource(ctx context.Context, req *dto.Reso
 	if !resourceKinds[req.Kind] {
 		return badRequest("INVALID_RESOURCE_KIND")
 	}
-	_, err := s.sports.GetByID(ctx, req.SportID)
+	_, err := s.sports.GetByID(ctx, businessID, req.SportID)
 	return orBadRequest(err, "SPORT_NOT_FOUND")
 }
 
-func (s *CatalogServiceImpl) CreateResource(ctx context.Context, req dto.ResourceRequest) (*dto.ResourceDTO, error) {
-	if err := s.validateResource(ctx, &req); err != nil {
+func (s *CatalogServiceImpl) CreateResource(ctx context.Context, businessID uint, req dto.ResourceRequest) (*dto.ResourceDTO, error) {
+	if err := s.validateResource(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
-	m := domain.Resource{SportID: req.SportID, Name: req.Name, Kind: req.Kind, Active: isActive(req.Active)}
+	if err := s.limits.CheckResources(ctx, businessID); err != nil {
+		return nil, err
+	}
+	m := domain.Resource{BusinessID: businessID, SportID: req.SportID, Name: req.Name, Kind: req.Kind, Active: isActive(req.Active)}
 	if err := s.resources.Create(ctx, &m); err != nil {
 		return nil, err
 	}
@@ -165,8 +174,8 @@ func (s *CatalogServiceImpl) CreateResource(ctx context.Context, req dto.Resourc
 	return &d, nil
 }
 
-func (s *CatalogServiceImpl) GetResource(ctx context.Context, id uint) (*dto.ResourceDTO, error) {
-	m, err := s.resources.GetByID(ctx, id)
+func (s *CatalogServiceImpl) GetResource(ctx context.Context, businessID, id uint) (*dto.ResourceDTO, error) {
+	m, err := s.resources.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +183,7 @@ func (s *CatalogServiceImpl) GetResource(ctx context.Context, id uint) (*dto.Res
 	return &d, nil
 }
 
-func (s *CatalogServiceImpl) ListResources(ctx context.Context, q dto.ListQuery) (*dto.PagedResult[dto.ResourceDTO], error) {
+func (s *CatalogServiceImpl) ListResources(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.ResourceDTO], error) {
 	lq, page, limit := newListQuery(q)
 	if q.SportID != 0 {
 		lq.Filters["sport_id"] = q.SportID
@@ -182,18 +191,18 @@ func (s *CatalogServiceImpl) ListResources(ctx context.Context, q dto.ListQuery)
 	if q.Active != nil {
 		lq.Filters["active"] = *q.Active
 	}
-	items, total, err := s.resources.List(ctx, lq)
+	items, total, err := s.resources.List(ctx, businessID, lq)
 	if err != nil {
 		return nil, err
 	}
 	return pageOf(items, total, page, limit, toResourceDTO), nil
 }
 
-func (s *CatalogServiceImpl) UpdateResource(ctx context.Context, id uint, req dto.ResourceRequest) (*dto.ResourceDTO, error) {
-	if err := s.validateResource(ctx, &req); err != nil {
+func (s *CatalogServiceImpl) UpdateResource(ctx context.Context, businessID, id uint, req dto.ResourceRequest) (*dto.ResourceDTO, error) {
+	if err := s.validateResource(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
-	m, err := s.resources.GetByID(ctx, id)
+	m, err := s.resources.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -206,57 +215,57 @@ func (s *CatalogServiceImpl) UpdateResource(ctx context.Context, id uint, req dt
 }
 
 // DeleteResource will also have to refuse resources with future bookings once bookings exist (phase 3)
-func (s *CatalogServiceImpl) DeleteResource(ctx context.Context, id uint) error {
-	return s.resources.Delete(ctx, id)
+func (s *CatalogServiceImpl) DeleteResource(ctx context.Context, businessID, id uint) error {
+	return s.resources.Delete(ctx, businessID, id)
 }
 
 // ---------- coaches ----------
 
 func (s *CatalogServiceImpl) toCoachDTO(m domain.Coach) dto.CoachDTO {
-	sports := make([]dto.SportRefDTO, 0, len(m.Sports))
-	for _, sp := range m.Sports {
-		sports = append(sports, dto.SportRefDTO{ID: sp.ID, Name: sp.Name})
-	}
 	return dto.CoachDTO{
 		ID: m.ID, Name: m.Name, Bio: m.Bio, Phone: m.Phone, ImageKey: m.ImageKey,
-		ImageURL: s.storage.URL(m.ImageKey), Active: m.Active, Sports: sports,
+		ImageURL: s.files.url(m.ImageKey), Active: m.Active, Sports: sportRefs(m.Sports),
 	}
 }
 
-func validateCoach(req *dto.CoachRequest) error {
+func sportRefs(sports []domain.Sport) []dto.SportRefDTO {
+	return mapSlice(sports, func(sp domain.Sport) dto.SportRefDTO { return dto.SportRefDTO{ID: sp.ID, Name: sp.Name} })
+}
+
+func (s *CatalogServiceImpl) validateCoach(ctx context.Context, businessID uint, req *dto.CoachRequest) error {
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		return badRequest("NAME_IS_REQUIRED")
 	}
-	if req.ImageKey != "" && !isValidMediaKey(req.ImageKey) {
-		return badRequest("INVALID_FILE_KEY")
-	}
-	return nil
+	return s.files.requireOwned(ctx, businessID, req.ImageKey)
 }
 
-func (s *CatalogServiceImpl) CreateCoach(ctx context.Context, req dto.CoachRequest) (*dto.CoachDTO, error) {
-	if err := validateCoach(&req); err != nil {
+func (s *CatalogServiceImpl) CreateCoach(ctx context.Context, businessID uint, req dto.CoachRequest) (*dto.CoachDTO, error) {
+	if err := s.validateCoach(ctx, businessID, &req); err != nil {
+		return nil, err
+	}
+	if err := s.limits.CheckCoaches(ctx, businessID); err != nil {
 		return nil, err
 	}
 	m := domain.Coach{
-		Name: req.Name, Bio: req.Bio, Phone: strings.TrimSpace(req.Phone),
+		BusinessID: businessID, Name: req.Name, Bio: req.Bio, Phone: strings.TrimSpace(req.Phone),
 		ImageKey: req.ImageKey, Active: isActive(req.Active),
 	}
 	if err := s.coaches.Create(ctx, &m); err != nil {
 		return nil, err
 	}
-	if err := s.coaches.SetSports(ctx, m.ID, req.SportIDs); err != nil {
+	if err := s.coaches.SetSports(ctx, businessID, m.ID, req.SportIDs); err != nil {
 		// do not leave a coach whose sports could not be saved
-		if delErr := s.coaches.Delete(ctx, m.ID); delErr != nil {
+		if delErr := s.coaches.Delete(ctx, businessID, m.ID); delErr != nil {
 			log.Printf("❌ could not roll back coach %d: %v", m.ID, delErr)
 		}
 		return nil, err
 	}
-	return s.GetCoach(ctx, m.ID)
+	return s.GetCoach(ctx, businessID, m.ID)
 }
 
-func (s *CatalogServiceImpl) GetCoach(ctx context.Context, id uint) (*dto.CoachDTO, error) {
-	m, err := s.coaches.GetByID(ctx, id)
+func (s *CatalogServiceImpl) GetCoach(ctx context.Context, businessID, id uint) (*dto.CoachDTO, error) {
+	m, err := s.coaches.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -264,28 +273,28 @@ func (s *CatalogServiceImpl) GetCoach(ctx context.Context, id uint) (*dto.CoachD
 	return &d, nil
 }
 
-func (s *CatalogServiceImpl) ListCoaches(ctx context.Context, q dto.ListQuery) (*dto.PagedResult[dto.CoachDTO], error) {
+func (s *CatalogServiceImpl) ListCoaches(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.CoachDTO], error) {
 	lq, page, limit := newListQuery(q)
 	if q.Active != nil {
 		lq.Filters["active"] = *q.Active
 	}
-	items, total, err := s.coaches.List(ctx, lq)
+	items, total, err := s.coaches.List(ctx, businessID, lq)
 	if err != nil {
 		return nil, err
 	}
 	return pageOf(items, total, page, limit, s.toCoachDTO), nil
 }
 
-func (s *CatalogServiceImpl) UpdateCoach(ctx context.Context, id uint, req dto.CoachRequest) (*dto.CoachDTO, error) {
-	if err := validateCoach(&req); err != nil {
+func (s *CatalogServiceImpl) UpdateCoach(ctx context.Context, businessID, id uint, req dto.CoachRequest) (*dto.CoachDTO, error) {
+	if err := s.validateCoach(ctx, businessID, &req); err != nil {
 		return nil, err
 	}
-	m, err := s.coaches.GetByID(ctx, id)
+	m, err := s.coaches.GetByID(ctx, businessID, id)
 	if err != nil {
 		return nil, err
 	}
 	// check the sports first so a bad id does not leave a half-updated coach
-	if err := s.coaches.SetSports(ctx, id, req.SportIDs); err != nil {
+	if err := s.coaches.SetSports(ctx, businessID, id, req.SportIDs); err != nil {
 		return nil, err
 	}
 	oldKey := m.ImageKey
@@ -295,28 +304,18 @@ func (s *CatalogServiceImpl) UpdateCoach(ctx context.Context, id uint, req dto.C
 	if err := s.coaches.Update(ctx, m); err != nil {
 		return nil, err
 	}
-	s.removeReplacedImage(ctx, oldKey, m.ImageKey)
-	return s.GetCoach(ctx, id)
+	s.files.replaced(ctx, businessID, oldKey, m.ImageKey)
+	return s.GetCoach(ctx, businessID, id)
 }
 
-func (s *CatalogServiceImpl) DeleteCoach(ctx context.Context, id uint) error {
-	m, err := s.coaches.GetByID(ctx, id)
+func (s *CatalogServiceImpl) DeleteCoach(ctx context.Context, businessID, id uint) error {
+	m, err := s.coaches.GetByID(ctx, businessID, id)
 	if err != nil {
 		return err
 	}
-	if err := s.coaches.Delete(ctx, id); err != nil {
+	if err := s.coaches.Delete(ctx, businessID, id); err != nil {
 		return err
 	}
-	s.removeReplacedImage(ctx, m.ImageKey, "")
+	s.files.replaced(ctx, businessID, m.ImageKey, "")
 	return nil
-}
-
-// removeReplacedImage deletes the old file after a successful save; a failure only leaves an orphan file
-func (s *CatalogServiceImpl) removeReplacedImage(ctx context.Context, oldKey, newKey string) {
-	if oldKey == "" || oldKey == newKey {
-		return
-	}
-	if err := s.storage.Delete(ctx, oldKey); err != nil {
-		log.Printf("⚠️  could not delete replaced image %s: %v", oldKey, err)
-	}
 }

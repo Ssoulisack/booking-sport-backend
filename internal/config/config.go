@@ -18,6 +18,7 @@ import (
 
 // Config holds the application configuration
 type Config struct {
+	App      AppConfig
 	Server   ServerConfig
 	Database mysql.Config
 	Postgres postgres.Config
@@ -26,6 +27,13 @@ type Config struct {
 	Minio    minio.Config
 	Storage  storage.Config
 	Mailer   mailer.Config
+}
+
+// AppConfig holds platform-wide settings. FrontendURL is the base of links in emails
+// (invites, password resets), e.g. https://booking.example.com
+type AppConfig struct {
+	Name        string
+	FrontendURL string
 }
 
 // ServerConfig holds the HTTP server configuration
@@ -89,6 +97,10 @@ func LoadConfig() (*Config, error) {
 
 // setDefaults sets the default values for the configuration
 func setDefaults() {
+	// App defaults
+	viper.SetDefault("app.name", "Sport Booking")
+	viper.SetDefault("app.frontendUrl", "http://localhost:5173")
+
 	// Server defaults
 	viper.SetDefault("server.port", "8080")
 	viper.SetDefault("server.readTimeout", 10)

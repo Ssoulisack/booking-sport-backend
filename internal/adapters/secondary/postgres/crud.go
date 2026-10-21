@@ -3,78 +3,120 @@ package postgres
 import (
 	"backend/internal/adapters/secondary/postgres/exception"
 	"backend/internal/core/port/output"
+	"backend/pkg/response"
 	"context"
+	"net/http"
 
 	"gorm.io/gorm"
 )
 
-// crudRepository is a generic gorm implementation of output.CRUDRepository.
-// searchColumn is the column matched (ILIKE) by ListQuery.Keyword; empty disables keyword search.
-type crudRepository[T any] struct {
+// errNoScope is returned when a business-owned query is attempted without a business:
+// failing closed is safer than returning every business's rows
+var errNoScope = response.NewError(http.StatusInternalServerError, "MISSING_BUSINESS_SCOPE")
+
+// scopedRepository is a generic gorm implementation of output.ScopedRepository for models
+// with a business_id column. searchColumn is matched (ILIKE) by ListQuery.Keyword.
+type scopedRepository[T any] struct {
 	db           *gorm.DB
 	searchColumn string
 	preloads     []string
 }
 
-// NewCRUDRepository creates a PostgreSQL repository for any gorm model
-func NewCRUDRepository[T any](db *gorm.DB, searchColumn string, preloads ...string) output.CRUDRepository[T] {
-	return newCRUD[T](db, searchColumn, preloads...)
+// NewScopedRepository creates a PostgreSQL repository for a business-owned gorm model
+func NewScopedRepository[T any](db *gorm.DB, searchColumn string, preloads ...string) output.ScopedRepository[T] {
+	return newScoped[T](db, searchColumn, preloads...)
 }
 
-func newCRUD[T any](db *gorm.DB, searchColumn string, preloads ...string) *crudRepository[T] {
-	return &crudRepository[T]{db: db, searchColumn: searchColumn, preloads: preloads}
+func newScoped[T any](db *gorm.DB, searchColumn string, preloads ...string) *scopedRepository[T] {
+	return &scopedRepository[T]{db: db, searchColumn: searchColumn, preloads: preloads}
 }
 
-func (r *crudRepository[T]) withPreloads(tx *gorm.DB) *gorm.DB {
+// scope starts a query limited to one business
+func (r *scopedRepository[T]) scope(ctx context.Context, businessID uint) (*gorm.DB, error) {
+	if businessID == 0 {
+		return nil, errNoScope
+	}
+	return r.db.WithContext(ctx).Model(new(T)).Where("business_id = ?", businessID), nil
+}
+
+func (r *scopedRepository[T]) withPreloads(tx *gorm.DB) *gorm.DB {
 	for _, p := range r.preloads {
 		tx = tx.Preload(p)
 	}
 	return tx
 }
 
-func (r *crudRepository[T]) Create(ctx context.Context, m *T) error {
+func (r *scopedRepository[T]) Create(ctx context.Context, m *T) error {
 	return exception.HandleGormError(r.db.WithContext(ctx).Create(m).Error)
 }
 
-func (r *crudRepository[T]) GetByID(ctx context.Context, id uint) (*T, error) {
+func (r *scopedRepository[T]) GetByID(ctx context.Context, businessID, id uint) (*T, error) {
+	tx, err := r.scope(ctx, businessID)
+	if err != nil {
+		return nil, err
+	}
 	var m T
-	if err := r.withPreloads(r.db.WithContext(ctx)).First(&m, id).Error; err != nil {
+	if err := r.withPreloads(tx).First(&m, id).Error; err != nil {
 		return nil, exception.HandleGormError(err)
 	}
 	return &m, nil
 }
 
-func (r *crudRepository[T]) List(ctx context.Context, q output.ListQuery) ([]T, int64, error) {
-	tx := r.db.WithContext(ctx).Model(new(T))
+func applyFilters(tx *gorm.DB, filters map[string]any) *gorm.DB {
+	for column, value := range filters {
+		tx = tx.Where(column+" = ?", value)
+	}
+	return tx
+}
+
+func paginate(tx *gorm.DB, q output.ListQuery) *gorm.DB {
+	if q.Limit > 0 {
+		tx = tx.Offset((max(q.Page, 1) - 1) * q.Limit).Limit(q.Limit)
+	}
+	return tx
+}
+
+func (r *scopedRepository[T]) List(ctx context.Context, businessID uint, q output.ListQuery) ([]T, int64, error) {
+	tx, err := r.scope(ctx, businessID)
+	if err != nil {
+		return nil, 0, err
+	}
 	if q.Keyword != "" && r.searchColumn != "" {
 		tx = tx.Where(r.searchColumn+" ILIKE ?", "%"+q.Keyword+"%")
 	}
-	for column, value := range q.Filters {
-		tx = tx.Where(column+" = ?", value)
-	}
+	tx = applyFilters(tx, q.Filters)
 
 	var total int64
 	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, exception.HandleGormError(err)
 	}
-
 	var items []T
-	tx = r.withPreloads(tx).Order("id ASC")
-	if q.Limit > 0 {
-		tx = tx.Offset((max(q.Page, 1) - 1) * q.Limit).Limit(q.Limit)
-	}
-	if err := tx.Find(&items).Error; err != nil {
+	if err := paginate(r.withPreloads(tx).Order("id ASC"), q).Find(&items).Error; err != nil {
 		return nil, 0, exception.HandleGormError(err)
 	}
 	return items, total, nil
 }
 
-func (r *crudRepository[T]) Update(ctx context.Context, m *T) error {
+func (r *scopedRepository[T]) Count(ctx context.Context, businessID uint, filters map[string]any) (int64, error) {
+	tx, err := r.scope(ctx, businessID)
+	if err != nil {
+		return 0, err
+	}
+	var total int64
+	err = applyFilters(tx, filters).Count(&total).Error
+	return total, exception.HandleGormError(err)
+}
+
+func (r *scopedRepository[T]) Update(ctx context.Context, m *T) error {
 	return exception.HandleGormError(r.db.WithContext(ctx).Save(m).Error)
 }
 
-func (r *crudRepository[T]) Delete(ctx context.Context, id uint) error {
-	res := r.db.WithContext(ctx).Delete(new(T), id)
+func (r *scopedRepository[T]) Delete(ctx context.Context, businessID, id uint) error {
+	tx, err := r.scope(ctx, businessID)
+	if err != nil {
+		return err
+	}
+	res := tx.Delete(new(T), id)
 	if res.Error != nil {
 		return exception.HandleGormError(res.Error)
 	}

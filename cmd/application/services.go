@@ -7,29 +7,39 @@ import (
 
 // AppServices holds all application services
 type AppServices struct {
-	user       input.UserService
-	auth       input.AuthService
-	catalog    input.CatalogService
-	schedule   input.ScheduleService
-	rules      input.RuleService
-	media      input.MediaService
-	adminUsers input.AdminUserService
+	user        input.UserService
+	auth        input.AuthService
+	access      input.AccessService
+	platform    input.PlatformService
+	business    input.BusinessService
+	invitations input.InvitationService
+	public      input.PublicService
+	catalog     input.CatalogService
+	schedule    input.ScheduleService
+	rules       input.RuleService
+	media       input.MediaService
 }
 
 // setupServices initializes all core business logic services
 func SetupServices(repos *AppRepositories) *AppServices {
-	userService := services.NewUserService(repos.user, repos.redis, repos.minio)
-	authService := services.NewAuthService(repos.user, repos.redis)
+	r := repos
+	limits := services.NewLimits(r.businesses, r.sports, r.resources, r.coaches, r.classSessions, r.memberships, r.invitations, r.media)
 	return &AppServices{
-		user:    userService,
-		auth:    authService,
-		catalog: services.NewCatalogService(repos.sports, repos.resources, repos.coaches, repos.storage),
-		schedule: services.NewScheduleService(
-			repos.openingHours, repos.closures, repos.prices, repos.classSessions,
-			repos.sports, repos.resources, repos.coaches,
+		user:        services.NewUserService(r.user, r.redis, r.minio),
+		auth:        services.NewAuthService(r.user, r.redis, r.memberships, r.passwordResets, r.mailer, r.app.FrontendURL),
+		access:      services.NewAccessService(r.user, r.memberships, r.businesses, r.supportVisits),
+		platform:    services.NewPlatformService(r.plans, r.businesses, r.memberships, r.invitations, r.user, limits, r.mailer, r.app.FrontendURL),
+		invitations: services.NewInvitationService(r.invitations, r.memberships, r.businesses, r.user),
+		public:      services.NewPublicService(r.businesses, r.sports, r.resources, r.coaches, r.classSessions, r.storage),
+		business: services.NewBusinessService(
+			r.businesses, r.memberships, r.invitations, r.user, r.sports, r.resources, r.openingHours, r.prices,
+			r.supportVisits, r.storage, r.media, limits, r.mailer, r.app.FrontendURL,
 		),
-		rules:      services.NewRuleService(repos.rules, repos.sports, repos.resources),
-		media:      services.NewMediaService(repos.storage),
-		adminUsers: services.NewAdminUserService(repos.user),
+		catalog: services.NewCatalogService(r.sports, r.resources, r.coaches, r.storage, r.media, limits),
+		schedule: services.NewScheduleService(
+			r.openingHours, r.closures, r.prices, r.classSessions, r.sports, r.resources, r.coaches, limits,
+		),
+		rules: services.NewRuleService(r.rules, r.sports, r.resources),
+		media: services.NewMediaService(r.storage, r.media, limits),
 	}
 }

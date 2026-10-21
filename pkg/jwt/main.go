@@ -238,3 +238,17 @@ func bearerToken(auth string) string {
 	}
 	return strings.TrimSpace(auth[7:])
 }
+
+// GetRefreshClaims returns the refresh token's claims as issued (GetOwnerRefresh replaces IssuedAt with now)
+func GetRefreshClaims(c *fiber.Ctx) (*ClaimsToken, error) {
+	_, decrypt, _ := jwt.GCM([]byte(config.JWTGlobal.RefreshSecret), nil)
+	verifiedToken, err := jwt.VerifyEncrypted(jwt.HS256, []byte(config.JWTGlobal.RefreshSecret), decrypt, []byte(bearerToken(c.Get("Authorization"))))
+	if err != nil {
+		return nil, err
+	}
+	var claims ClaimsToken
+	if err := verifiedToken.Claims(&claims); err != nil {
+		return nil, err
+	}
+	return &claims, nil
+}

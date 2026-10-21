@@ -10,33 +10,36 @@ import (
 const (
 	OwnerResource = "resource"
 	OwnerCoach    = "coach"
-	OwnerVenue    = "venue" // closures only: closes everything
+	OwnerVenue    = "venue" // closures only: closes the whole business
 )
 
 // OpeningHour is one open interval of a resource or coach on a weekday.
-// Weekday follows time.Weekday (0 = Sunday). Times are "HH:MM" in the venue timezone.
+// Weekday follows time.Weekday (0 = Sunday). Times are "HH:MM" in the business timezone.
 type OpeningHour struct {
 	gorm.Model
-	OwnerType string `gorm:"type:varchar(20);not null;index:idx_hours_owner,priority:1"`
-	OwnerID   uint   `gorm:"not null;index:idx_hours_owner,priority:2"`
-	Weekday   int    `gorm:"not null"`
-	OpenTime  string `gorm:"type:varchar(5);not null"`
-	CloseTime string `gorm:"type:varchar(5);not null"`
+	BusinessID uint   `gorm:"not null;index"`
+	OwnerType  string `gorm:"type:varchar(20);not null;index:idx_hours_owner,priority:1"`
+	OwnerID    uint   `gorm:"not null;index:idx_hours_owner,priority:2"`
+	Weekday    int    `gorm:"not null"`
+	OpenTime   string `gorm:"type:varchar(5);not null"`
+	CloseTime  string `gorm:"type:varchar(5);not null"`
 }
 
-// Closure blocks a resource, a coach or the whole venue for a period (holiday, maintenance)
+// Closure blocks a resource, a coach or the whole business for a period (holiday, maintenance)
 type Closure struct {
 	gorm.Model
-	OwnerType string    `gorm:"type:varchar(20);not null;index:idx_closures_owner,priority:1"`
-	OwnerID   uint      `gorm:"not null;default:0;index:idx_closures_owner,priority:2"` // 0 for the venue
-	StartsAt  time.Time `gorm:"not null"`
-	EndsAt    time.Time `gorm:"not null"`
-	Reason    string    `gorm:"type:varchar(255)"`
+	BusinessID uint      `gorm:"not null;index"`
+	OwnerType  string    `gorm:"type:varchar(20);not null;index:idx_closures_owner,priority:1"`
+	OwnerID    uint      `gorm:"not null;default:0;index:idx_closures_owner,priority:2"` // 0 for the venue
+	StartsAt   time.Time `gorm:"not null"`
+	EndsAt     time.Time `gorm:"not null"`
+	Reason     string    `gorm:"type:varchar(255)"`
 }
 
 // Price is the flat hourly price of a resource or coach, in whole currency units
 type Price struct {
 	gorm.Model
+	BusinessID   uint   `gorm:"not null;index"`
 	OwnerType    string `gorm:"type:varchar(20);not null;uniqueIndex:idx_prices_owner,priority:1,where:deleted_at IS NULL"`
 	OwnerID      uint   `gorm:"not null;uniqueIndex:idx_prices_owner,priority:2,where:deleted_at IS NULL"`
 	PricePerHour int64  `gorm:"not null"`
@@ -46,6 +49,7 @@ type Price struct {
 // ClassSession is a one-off group session with a capacity
 type ClassSession struct {
 	gorm.Model
+	BusinessID uint      `gorm:"not null;index"`
 	SportID    uint      `gorm:"not null;index"`
 	CoachID    *uint     `gorm:"index"`
 	ResourceID *uint     `gorm:"index"`

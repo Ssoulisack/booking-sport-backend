@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"backend/internal/adapters/primary/http/middleware"
 	"backend/internal/core/dto"
 	"backend/pkg/response"
 	"context"
@@ -28,65 +29,95 @@ func ownerParams(c *fiber.Ctx) (string, uint, error) {
 
 func fail(c *fiber.Ctx, err error) error { return response.NewErrorResponses(c, err) }
 
-func create[Req, Res any](c *fiber.Ctx, fn func(context.Context, Req) (*Res, error)) error {
-	var req Req
-	if err := c.BodyParser(&req); err != nil {
-		return fail(c, response.ErrorBadRequest("INVALID_BODY"))
+func bind(c *fiber.Ctx, req any) error {
+	if err := c.BodyParser(req); err != nil {
+		return response.ErrorBadRequest("INVALID_BODY")
 	}
-	res, err := fn(c.UserContext(), req)
-	if err != nil {
-		return fail(c, err)
-	}
-	return response.NewCreatedResponse(c, res)
+	return nil
 }
 
-func get[Res any](c *fiber.Ctx, fn func(context.Context, uint) (*Res, error)) error {
-	id, err := idParam(c, "id")
+func ok(c *fiber.Ctx, data any, err error) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	res, err := fn(c.UserContext(), id)
-	if err != nil {
-		return fail(c, err)
-	}
-	return response.NewSuccessResponse(c, res)
+	return response.NewSuccessResponse(c, data)
 }
 
-func list[Res any](c *fiber.Ctx, fn func(context.Context, dto.ListQuery) (*dto.PagedResult[Res], error)) error {
-	var q dto.ListQuery
-	if err := c.QueryParser(&q); err != nil {
-		return fail(c, response.ErrorBadRequest("INVALID_QUERY"))
+func created(c *fiber.Ctx, data any, err error) error {
+	if err != nil {
+		return fail(c, err)
 	}
-	res, err := fn(c.UserContext(), q)
+	return response.NewCreatedResponse(c, data)
+}
+
+func done(c *fiber.Ctx, message string, err error) error {
+	if err != nil {
+		return fail(c, err)
+	}
+	return response.NewSuccessMessagesResponse(c, message)
+}
+
+func paged[Res any](c *fiber.Ctx, res *dto.PagedResult[Res], err error) error {
 	if err != nil {
 		return fail(c, err)
 	}
 	return response.NewPaginatedResponse(c, res.Items, res.Meta)
 }
 
-func update[Req, Res any](c *fiber.Ctx, fn func(context.Context, uint, Req) (*Res, error)) error {
+func listQuery(c *fiber.Ctx) (dto.ListQuery, error) {
+	var q dto.ListQuery
+	if err := c.QueryParser(&q); err != nil {
+		return q, response.ErrorBadRequest("INVALID_QUERY")
+	}
+	return q, nil
+}
+
+// ---------- business-scoped CRUD helpers: the business comes from middleware.Business ----------
+
+func scopedCreate[Req, Res any](c *fiber.Ctx, fn func(context.Context, uint, Req) (*Res, error)) error {
+	var req Req
+	if err := bind(c, &req); err != nil {
+		return fail(c, err)
+	}
+	res, err := fn(c.UserContext(), middleware.BusinessID(c), req)
+	return created(c, res, err)
+}
+
+func scopedGet[Res any](c *fiber.Ctx, fn func(context.Context, uint, uint) (*Res, error)) error {
+	id, err := idParam(c, "id")
+	if err != nil {
+		return fail(c, err)
+	}
+	res, err := fn(c.UserContext(), middleware.BusinessID(c), id)
+	return ok(c, res, err)
+}
+
+func scopedList[Res any](c *fiber.Ctx, fn func(context.Context, uint, dto.ListQuery) (*dto.PagedResult[Res], error)) error {
+	q, err := listQuery(c)
+	if err != nil {
+		return fail(c, err)
+	}
+	res, err := fn(c.UserContext(), middleware.BusinessID(c), q)
+	return paged(c, res, err)
+}
+
+func scopedUpdate[Req, Res any](c *fiber.Ctx, fn func(context.Context, uint, uint, Req) (*Res, error)) error {
 	id, err := idParam(c, "id")
 	if err != nil {
 		return fail(c, err)
 	}
 	var req Req
-	if err := c.BodyParser(&req); err != nil {
-		return fail(c, response.ErrorBadRequest("INVALID_BODY"))
-	}
-	res, err := fn(c.UserContext(), id, req)
-	if err != nil {
+	if err := bind(c, &req); err != nil {
 		return fail(c, err)
 	}
-	return response.NewSuccessResponse(c, res)
+	res, err := fn(c.UserContext(), middleware.BusinessID(c), id, req)
+	return ok(c, res, err)
 }
 
-func remove(c *fiber.Ctx, fn func(context.Context, uint) error) error {
+func scopedRemove(c *fiber.Ctx, fn func(context.Context, uint, uint) error) error {
 	id, err := idParam(c, "id")
 	if err != nil {
 		return fail(c, err)
 	}
-	if err := fn(c.UserContext(), id); err != nil {
-		return fail(c, err)
-	}
-	return response.NewSuccessMessagesResponse(c, "DELETED")
+	return done(c, "DELETED", fn(c.UserContext(), middleware.BusinessID(c), id))
 }

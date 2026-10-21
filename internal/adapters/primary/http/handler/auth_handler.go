@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"backend/internal/adapters/primary/http/middleware"
 	"backend/internal/core/dto"
 	"backend/internal/core/mappers"
 	"backend/internal/core/port/input"
@@ -16,6 +17,9 @@ type (
 		Login(c *fiber.Ctx) error
 		Refresh(c *fiber.Ctx) error
 		Me(c *fiber.Ctx) error
+		MyBusinesses(c *fiber.Ctx) error
+		ForgotPassword(c *fiber.Ctx) error
+		ResetPassword(c *fiber.Ctx) error
 	}
 	authHandler struct {
 		authService   input.AuthService
@@ -36,49 +40,56 @@ func NewAuthHandler(
 
 func (h *authHandler) Register(c *fiber.Ctx) error {
 	var req dto.RegisterDTO
-	if err := c.BodyParser(&req); err != nil {
-		return response.NewErrorBadRequest(c)
+	if err := bind(c, &req); err != nil {
+		return fail(c, err)
 	}
 	res, err := h.authService.Register(c.UserContext(), req)
-	if err != nil {
-		return response.NewErrorResponses(c, err)
-	}
-	return response.NewCreatedResponse(c, res)
+	return created(c, res, err)
 }
 
 func (h *authHandler) Login(c *fiber.Ctx) error {
 	var req dto.LoginDTO
-	if err := c.BodyParser(&req); err != nil {
-		return response.NewErrorBadRequest(c)
+	if err := bind(c, &req); err != nil {
+		return fail(c, err)
 	}
 	res, err := h.authService.Login(c.UserContext(), req)
-	if err != nil {
-		return response.NewErrorResponses(c, err)
-	}
-	return response.NewSuccessResponse(c, res)
+	return ok(c, res, err)
 }
 
 // Refresh expects the refresh token as the bearer token (see jwt.AccessRefreshToken)
 func (h *authHandler) Refresh(c *fiber.Ctx) error {
-	claims, err := jwt.GetOwnerRefresh(c)
+	claims, err := jwt.GetRefreshClaims(c)
 	if err != nil {
 		return response.NewErrorErrMsgUnauthorizedErrMsgInvalidToken(c)
 	}
-	res, err := h.authService.Refresh(c.UserContext(), uint(claims.ID))
-	if err != nil {
-		return response.NewErrorResponses(c, err)
-	}
-	return response.NewSuccessResponse(c, res)
+	res, err := h.authService.Refresh(c.UserContext(), uint(claims.ID), claims.IssuedAt)
+	return ok(c, res, err)
 }
 
 func (h *authHandler) Me(c *fiber.Ctx) error {
-	claims, err := jwt.GetOwnerAccessToken(c)
-	if err != nil {
-		return response.NewErrorErrMsgUnauthorizedErrMsgInvalidToken(c)
+	res, err := h.authService.Me(c.UserContext(), middleware.CurrentUser(c).ID)
+	return ok(c, res, err)
+}
+
+// MyBusinesses lists the businesses the user belongs to, for the dashboard's business switcher
+func (h *authHandler) MyBusinesses(c *fiber.Ctx) error {
+	res, err := h.authService.MyBusinesses(c.UserContext(), middleware.CurrentUser(c).ID)
+	return ok(c, res, err)
+}
+
+// ForgotPassword answers the same whether or not the email has an account
+func (h *authHandler) ForgotPassword(c *fiber.Ctx) error {
+	var req dto.ForgotPasswordRequest
+	if err := bind(c, &req); err != nil {
+		return fail(c, err)
 	}
-	res, err := h.authService.Me(c.UserContext(), uint(claims.ID))
-	if err != nil {
-		return response.NewErrorResponses(c, err)
+	return done(c, "IF_THE_ACCOUNT_EXISTS_AN_EMAIL_WAS_SENT", h.authService.ForgotPassword(c.UserContext(), req.Email))
+}
+
+func (h *authHandler) ResetPassword(c *fiber.Ctx) error {
+	var req dto.ResetPasswordRequest
+	if err := bind(c, &req); err != nil {
+		return fail(c, err)
 	}
-	return response.NewSuccessResponse(c, res)
+	return done(c, "PASSWORD_UPDATED", h.authService.ResetPassword(c.UserContext(), req))
 }

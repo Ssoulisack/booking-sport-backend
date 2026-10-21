@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"backend/internal/adapters/primary/http/middleware"
 	"backend/internal/core/port/input"
 	"backend/pkg/response"
 
@@ -21,7 +22,7 @@ func NewMediaHandler(svc input.MediaService) MediaHandler {
 	return &mediaHandler{svc: svc}
 }
 
-// Upload expects multipart/form-data with a "file" part and ?folder=sports|coaches|classes
+// Upload expects multipart/form-data with a "file" part and ?folder=sports|coaches|classes|branding
 func (h *mediaHandler) Upload(c *fiber.Ctx) error {
 	header, err := c.FormFile("file")
 	if err != nil {
@@ -33,17 +34,11 @@ func (h *mediaHandler) Upload(c *fiber.Ctx) error {
 	}
 	defer file.Close()
 
-	res, err := h.svc.Upload(c.UserContext(), c.Query("folder"), file)
-	if err != nil {
-		return fail(c, err)
-	}
-	return response.NewCreatedResponse(c, res)
+	res, err := h.svc.Upload(c.UserContext(), middleware.BusinessID(c), c.Query("folder"), file)
+	return created(c, res, err)
 }
 
-// Delete expects ?key= of a file the server generated earlier
+// Delete expects ?key= of a file this business uploaded
 func (h *mediaHandler) Delete(c *fiber.Ctx) error {
-	if err := h.svc.Delete(c.UserContext(), c.Query("key")); err != nil {
-		return fail(c, err)
-	}
-	return response.NewSuccessMessagesResponse(c, "DELETED")
+	return done(c, "DELETED", h.svc.Delete(c.UserContext(), middleware.BusinessID(c), c.Query("key")))
 }

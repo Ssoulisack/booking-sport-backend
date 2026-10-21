@@ -1,4 +1,9 @@
 # Copy to config.yaml and fill in real values (config.yaml is git-ignored)
+app:
+  name: Sport Booking
+  # base of the links in invite and password-reset emails, e.g. https://booking.example.com
+  frontendUrl: http://localhost:5173
+
 server:
   port: 3000
   readTimeout: 10
@@ -40,9 +45,11 @@ storage:
   serviceKey: change-me
   publicBaseUrl: ""
 
+# Development: Mailpit (docker compose up -d mailpit) on localhost:1025, inbox at http://localhost:8025
+# with empty username / password. Release: your SMTP provider's host, port (587 or 465) and credentials.
 mailer:
-  host: smtp.example.com
-  username: change-me
-  password: change-me
-  port: 587
+  host: localhost
+  username: ""
+  password: ""
+  port: 1025
   from: no-reply@example.com

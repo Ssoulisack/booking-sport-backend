@@ -35,20 +35,26 @@ func NewCatalogHandler(svc input.CatalogService) CatalogHandler {
 	return &catalogHandler{svc: svc}
 }
 
-func (h *catalogHandler) CreateSport(c *fiber.Ctx) error { return create(c, h.svc.CreateSport) }
-func (h *catalogHandler) GetSport(c *fiber.Ctx) error    { return get(c, h.svc.GetSport) }
-func (h *catalogHandler) ListSports(c *fiber.Ctx) error  { return list(c, h.svc.ListSports) }
-func (h *catalogHandler) UpdateSport(c *fiber.Ctx) error { return update(c, h.svc.UpdateSport) }
-func (h *catalogHandler) DeleteSport(c *fiber.Ctx) error { return remove(c, h.svc.DeleteSport) }
+func (h *catalogHandler) CreateSport(c *fiber.Ctx) error { return scopedCreate(c, h.svc.CreateSport) }
+func (h *catalogHandler) GetSport(c *fiber.Ctx) error    { return scopedGet(c, h.svc.GetSport) }
+func (h *catalogHandler) ListSports(c *fiber.Ctx) error  { return scopedList(c, h.svc.ListSports) }
+func (h *catalogHandler) UpdateSport(c *fiber.Ctx) error { return scopedUpdate(c, h.svc.UpdateSport) }
+func (h *catalogHandler) DeleteSport(c *fiber.Ctx) error { return scopedRemove(c, h.svc.DeleteSport) }
 
-func (h *catalogHandler) CreateResource(c *fiber.Ctx) error { return create(c, h.svc.CreateResource) }
-func (h *catalogHandler) GetResource(c *fiber.Ctx) error    { return get(c, h.svc.GetResource) }
-func (h *catalogHandler) ListResources(c *fiber.Ctx) error  { return list(c, h.svc.ListResources) }
-func (h *catalogHandler) UpdateResource(c *fiber.Ctx) error { return update(c, h.svc.UpdateResource) }
-func (h *catalogHandler) DeleteResource(c *fiber.Ctx) error { return remove(c, h.svc.DeleteResource) }
+func (h *catalogHandler) CreateResource(c *fiber.Ctx) error {
+	return scopedCreate(c, h.svc.CreateResource)
+}
+func (h *catalogHandler) GetResource(c *fiber.Ctx) error   { return scopedGet(c, h.svc.GetResource) }
+func (h *catalogHandler) ListResources(c *fiber.Ctx) error { return scopedList(c, h.svc.ListResources) }
+func (h *catalogHandler) UpdateResource(c *fiber.Ctx) error {
+	return scopedUpdate(c, h.svc.UpdateResource)
+}
+func (h *catalogHandler) DeleteResource(c *fiber.Ctx) error {
+	return scopedRemove(c, h.svc.DeleteResource)
+}
 
-func (h *catalogHandler) CreateCoach(c *fiber.Ctx) error { return create(c, h.svc.CreateCoach) }
-func (h *catalogHandler) GetCoach(c *fiber.Ctx) error    { return get(c, h.svc.GetCoach) }
-func (h *catalogHandler) ListCoaches(c *fiber.Ctx) error { return list(c, h.svc.ListCoaches) }
-func (h *catalogHandler) UpdateCoach(c *fiber.Ctx) error { return update(c, h.svc.UpdateCoach) }
-func (h *catalogHandler) DeleteCoach(c *fiber.Ctx) error { return remove(c, h.svc.DeleteCoach) }
+func (h *catalogHandler) CreateCoach(c *fiber.Ctx) error { return scopedCreate(c, h.svc.CreateCoach) }
+func (h *catalogHandler) GetCoach(c *fiber.Ctx) error    { return scopedGet(c, h.svc.GetCoach) }
+func (h *catalogHandler) ListCoaches(c *fiber.Ctx) error { return scopedList(c, h.svc.ListCoaches) }
+func (h *catalogHandler) UpdateCoach(c *fiber.Ctx) error { return scopedUpdate(c, h.svc.UpdateCoach) }
+func (h *catalogHandler) DeleteCoach(c *fiber.Ctx) error { return scopedRemove(c, h.svc.DeleteCoach) }

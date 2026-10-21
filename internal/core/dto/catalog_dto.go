@@ -11,7 +11,7 @@ type ListQuery struct {
 	SportID   uint   `query:"sport_id"`
 	OwnerType string `query:"owner_type"`
 	OwnerID   uint   `query:"owner_id"`
-	RoleID    uint   `query:"role_id"`
+	Status    string `query:"status"`
 	Active    *bool  `query:"active"`
 }
 
@@ -166,13 +166,6 @@ type RuleDTO struct {
 	ScopeType string `json:"scope_type"`
 	ScopeID   uint   `json:"scope_id"`
 	RuleRequest
-}
-
-type CreateStaffRequest struct {
-	Name     string `json:"name"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Phone    string `json:"phone"`
 }
 
 type UserStatusRequest struct {

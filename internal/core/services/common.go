@@ -4,6 +4,10 @@ import (
 	"backend/internal/core/dto"
 	"backend/internal/core/port/output"
 	"backend/pkg/response"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"net/http"
 	"regexp"
 	"strings"
@@ -19,6 +23,7 @@ const (
 var (
 	currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
 	slugCleaner     = regexp.MustCompile(`[^a-z0-9]+`)
+	slugPattern     = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 )
 
 // normalizePage applies the default and maximum page size
@@ -78,14 +83,39 @@ func isActive(flag *bool) bool { return flag == nil || *flag }
 
 func validCurrency(c string) bool { return currencyPattern.MatchString(c) }
 
-func slugify(name string) string {
+// slugify makes a URL-safe slug; fallback is used for names with no ASCII letters (Lao, Thai)
+func slugify(name, fallback string) string {
 	slug := strings.Trim(slugCleaner.ReplaceAllString(strings.ToLower(name), "-"), "-")
-	if slug == "" { // names in non-Latin scripts (Lao, Thai) have no ASCII letters
-		slug = "item-" + uuid.NewString()[:8]
+	if slug == "" {
+		slug = fallback + "-" + uuid.NewString()[:8]
 	}
 	return slug
+}
+
+func validSlug(slug string) bool {
+	return len(slug) >= 3 && len(slug) <= 60 && slugPattern.MatchString(slug)
 }
 
 func conflict(code string) error { return response.NewError(http.StatusConflict, code) }
 
 func badRequest(code string) error { return response.ErrorBadRequest(code) }
+
+func forbidden(code string) error { return response.NewError(http.StatusForbidden, code) }
+
+func notFound(code string) error { return response.NewError(http.StatusNotFound, code) }
+
+// newToken returns a random URL-safe token and the hash to store. Only the hash is kept,
+// so a database leak does not expose working invite or reset links.
+func newToken() (raw, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", err
+	}
+	raw = base64.RawURLEncoding.EncodeToString(b)
+	return raw, hashToken(raw), nil
+}
+
+func hashToken(raw string) string {
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
