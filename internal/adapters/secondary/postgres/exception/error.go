@@ -71,6 +71,8 @@ func HandleGormError(err error) error {
 					return response.NewAppErrorStatusMessage(http.StatusBadRequest, errors.New(ErrDuplicateEntry))
 				case "23503": // foreign_key_violation
 					return response.NewAppErrorStatusMessage(http.StatusBadRequest, errors.New(ErrForeignKeyConstraintViolation))
+				case "23P01": // exclusion_violation: two active bookings of one resource or coach would overlap
+					return response.NewAppErrorStatusMessage(http.StatusConflict, errors.New("SLOT_NOT_AVAILABLE"))
 				}
 			}
 

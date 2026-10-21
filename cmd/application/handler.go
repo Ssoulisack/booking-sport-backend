@@ -20,6 +20,7 @@ type AppHandler struct {
 	schedule       handler.ScheduleHandler
 	rules          handler.RuleHandler
 	media          handler.MediaHandler
+	booking        handler.BookingHandler
 }
 
 func SetupHandlers(svc *AppServices) *AppHandler {
@@ -37,5 +38,6 @@ func SetupHandlers(svc *AppServices) *AppHandler {
 		schedule:       handler.NewScheduleHandler(svc.schedule),
 		rules:          handler.NewRuleHandler(svc.rules),
 		media:          handler.NewMediaHandler(svc.media),
+		booking:        handler.NewBookingHandler(svc.booking),
 	}
 }

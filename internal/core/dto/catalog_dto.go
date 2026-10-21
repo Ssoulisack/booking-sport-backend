@@ -148,18 +148,20 @@ type ClassSessionDTO struct {
 	Price      int64     `json:"price"`
 	Currency   string    `json:"currency"`
 	Active     bool      `json:"active"`
+	SeatsLeft  *int      `json:"seats_left,omitempty"` // public listing only
 }
 
 // RuleRequest sets a booking rule; a null field inherits from the next wider scope
 type RuleRequest struct {
-	MinDurationMin    *int `json:"min_duration_min"`
-	MaxDurationMin    *int `json:"max_duration_min"`
-	DurationStepMin   *int `json:"duration_step_min"`
-	StartStepMin      *int `json:"start_step_min"`
-	CancelBeforeHours *int `json:"cancel_before_hours"`
-	MaxDaysAhead      *int `json:"max_days_ahead"`
-	MinNoticeMin      *int `json:"min_notice_min"`
-	Capacity          *int `json:"capacity"`
+	MinDurationMin               *int `json:"min_duration_min"`
+	MaxDurationMin               *int `json:"max_duration_min"`
+	DurationStepMin              *int `json:"duration_step_min"`
+	StartStepMin                 *int `json:"start_step_min"`
+	CancelBeforeHours            *int `json:"cancel_before_hours"`
+	MaxDaysAhead                 *int `json:"max_days_ahead"`
+	MinNoticeMin                 *int `json:"min_notice_min"`
+	Capacity                     *int `json:"capacity"`
+	MaxActiveBookingsPerCustomer *int `json:"max_active_bookings_per_customer"`
 }
 
 type RuleDTO struct {

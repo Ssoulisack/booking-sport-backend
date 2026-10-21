@@ -17,7 +17,7 @@ database:
     password: change-me
     dbname: booking
     sslmode: disable
-    timezone: Asia/Bangkok
+    timezone: Asia/Vientiane
 
 redis:
   host: localhost

@@ -70,4 +70,6 @@ type SupportVisitRepository interface {
 type Mailer interface {
 	SendInvitation(to, businessName, inviterName, role, acceptURL string) error
 	SendPasswordReset(to, name, resetURL string) error
+	// SendBookingLink gives a guest the private link to view or cancel their booking
+	SendBookingLink(to, businessName, code, link string) error
 }

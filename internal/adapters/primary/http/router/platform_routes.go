@@ -3,6 +3,7 @@ package router
 import (
 	handler "backend/internal/adapters/primary/http/handler"
 	"backend/internal/adapters/primary/http/middleware"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -34,7 +35,7 @@ func SetupPublicRoutes(
 	public handler.PublicHandler,
 ) {
 	router.Get("/invitations/:token", invitations.Get)
-	router.Post("/invitations/:token/accept", auth.OptionalUser, invitations.Accept)
+	router.Post("/invitations/:token/accept", middleware.RateLimit(10, 15*time.Minute), auth.OptionalUser, invitations.Accept)
 
 	pub := router.Group("/public/:slug")
 	pub.Get("/", public.Business)

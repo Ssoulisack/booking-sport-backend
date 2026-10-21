@@ -84,7 +84,7 @@ type Business struct {
 	Suspended   bool           `gorm:"not null;default:false"`
 
 	// settings
-	Timezone      string            `gorm:"type:varchar(64);not null;default:Asia/Bangkok"`
+	Timezone      string            `gorm:"type:varchar(64);not null;default:Asia/Vientiane"`
 	Currency      string            `gorm:"type:varchar(3);not null;default:LAK"`
 	Language      string            `gorm:"type:varchar(5);not null;default:en"`
 	LogoKey       string            `gorm:"type:varchar(255)"`
@@ -97,6 +97,8 @@ type Business struct {
 	SocialLinks   map[string]string `gorm:"type:jsonb;serializer:json"`
 	BookingPolicy string            `gorm:"type:text"`
 	BookingMode   string            `gorm:"type:varchar(10);not null;default:account"`
+	// RequireApproval makes new customer bookings pending until staff confirm them
+	RequireApproval bool `gorm:"not null;default:false"`
 }
 
 func (b Business) Status() string {

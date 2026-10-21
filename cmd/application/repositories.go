@@ -40,6 +40,7 @@ type AppRepositories struct {
 	prices         output.PriceRepository
 	classSessions  output.ClassSessionRepository
 	rules          output.RuleRepository
+	bookings       output.BookingRepository
 }
 
 // setupRepositories initializes all data storage connections
@@ -91,10 +92,11 @@ func SetupRepositories(cfg *config.Config) *AppRepositories {
 		resources:      postgres.NewScopedRepository[domain.Resource](db, "name"),
 		coaches:        postgres.NewCoachRepository(db),
 		openingHours:   postgres.NewOpeningHourRepository(db),
-		closures:       postgres.NewScopedRepository[domain.Closure](db, ""),
+		closures:       postgres.NewClosureRepository(db),
 		prices:         postgres.NewPriceRepository(db),
 		classSessions:  postgres.NewClassSessionRepository(db),
 		rules:          postgres.NewRuleRepository(db),
+		bookings:       postgres.NewBookingRepository(db),
 	}
 }
 

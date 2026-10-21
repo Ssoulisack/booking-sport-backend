@@ -152,7 +152,7 @@ func TestSportImageMustBeOwnUpload(t *testing.T) {
 	media := newFakeMedia()
 	sports := &fakeSports{owner: map[uint]uint{1: business}}
 	limits := services.NewLimits(fakeBusinesses{limits: roomyLimits}, sports, nil, nil, nil, nil, nil, media)
-	catalog := services.NewCatalogService(sports, nil, nil, newFakeStorage(), media, limits)
+	catalog := services.NewCatalogService(sports, nil, nil, nil, nil, newFakeStorage(), media, limits)
 
 	own := "businesses/7/sports/22222222-2222-2222-2222-222222222222.png"
 	media.items[own] = domain.Media{BusinessID: business, Key: own}

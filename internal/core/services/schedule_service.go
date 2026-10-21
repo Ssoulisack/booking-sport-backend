@@ -20,6 +20,7 @@ type ScheduleServiceImpl struct {
 	sports    output.SportRepository
 	resources output.ResourceRepository
 	coaches   output.CoachRepository
+	bookings  output.BookingRepository
 	limits    *Limits
 }
 
@@ -31,11 +32,12 @@ func NewScheduleService(
 	sports output.SportRepository,
 	resources output.ResourceRepository,
 	coaches output.CoachRepository,
+	bookings output.BookingRepository,
 	limits *Limits,
 ) input.ScheduleService {
 	return &ScheduleServiceImpl{
 		hours: hours, closures: closures, prices: prices, classes: classes,
-		sports: sports, resources: resources, coaches: coaches, limits: limits,
+		sports: sports, resources: resources, coaches: coaches, bookings: bookings, limits: limits,
 	}
 }
 
@@ -383,6 +385,9 @@ func (s *ScheduleServiceImpl) UpdateClassSession(ctx context.Context, businessID
 	if err := s.limits.CheckClassSessionMove(ctx, businessID, m.StartsAt, req.StartsAt); err != nil {
 		return nil, err
 	}
+	if err := s.protectBookedClass(ctx, businessID, m, req); err != nil {
+		return nil, err
+	}
 	m.SportID, m.CoachID, m.ResourceID, m.Title = req.SportID, req.CoachID, req.ResourceID, req.Title
 	m.StartsAt, m.EndsAt, m.Capacity = req.StartsAt, req.EndsAt, req.Capacity
 	m.Price, m.Currency, m.Active = req.Price, req.Currency, isActive(req.Active)
@@ -393,6 +398,47 @@ func (s *ScheduleServiceImpl) UpdateClassSession(ctx context.Context, businessID
 	return &d, nil
 }
 
+// DeleteClassSession refuses a class that customers have booked seats in
 func (s *ScheduleServiceImpl) DeleteClassSession(ctx context.Context, businessID, id uint) error {
+	taken, err := s.seatsTaken(ctx, businessID, id)
+	if err != nil {
+		return err
+	}
+	if taken > 0 {
+		return conflict("CLASS_HAS_BOOKINGS")
+	}
 	return s.classes.Delete(ctx, businessID, id)
+}
+
+func (s *ScheduleServiceImpl) seatsTaken(ctx context.Context, businessID, classID uint) (int, error) {
+	taken, err := s.bookings.SeatsTaken(ctx, businessID, []uint{classID})
+	if err != nil {
+		return 0, err
+	}
+	return taken[classID], nil
+}
+
+// protectBookedClass keeps a class that has bookings where its customers expect it: same time,
+// same court and coach, still active, and with room for every seat already booked
+func (s *ScheduleServiceImpl) protectBookedClass(ctx context.Context, businessID uint, m *domain.ClassSession, req dto.ClassSessionRequest) error {
+	taken, err := s.seatsTaken(ctx, businessID, m.ID)
+	if err != nil || taken == 0 {
+		return err
+	}
+	samePlace := equalID(m.ResourceID, req.ResourceID) && equalID(m.CoachID, req.CoachID)
+	sameTime := m.StartsAt.Equal(req.StartsAt) && m.EndsAt.Equal(req.EndsAt)
+	if !samePlace || !sameTime || !isActive(req.Active) || req.SportID != m.SportID {
+		return conflict("CLASS_HAS_BOOKINGS")
+	}
+	if req.Capacity < taken {
+		return conflict("CAPACITY_BELOW_BOOKED_SEATS")
+	}
+	return nil
+}
+
+func equalID(a, b *uint) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }

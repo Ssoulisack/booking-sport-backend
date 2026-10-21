@@ -95,3 +95,54 @@ func (r *classSessionRepository) ListUpcoming(ctx context.Context, businessID ui
 	err = paginate(tx.Order("starts_at ASC"), q).Find(&items).Error
 	return items, total, exception.HandleGormError(err)
 }
+
+// syncClassHold makes an active class occupy its court and coach like a booking would, so a rental
+// can never overlap a class (the database refuses it). Inactive classes hold nothing.
+func syncClassHold(tx *gorm.DB, m *domain.ClassSession) error {
+	if err := tx.Where("class_session_id = ? AND kind = ?", m.ID, domain.ItemClassHold).Delete(&domain.BookingItem{}).Error; err != nil {
+		return err
+	}
+	if !m.Active || (m.ResourceID == nil && m.CoachID == nil) {
+		return nil
+	}
+	classID := m.ID
+	hold := domain.BookingItem{
+		BusinessID: m.BusinessID, Kind: domain.ItemClassHold, ResourceID: m.ResourceID, CoachID: m.CoachID,
+		ClassSessionID: &classID, Seats: 0, StartsAt: m.StartsAt, EndsAt: m.EndsAt, Active: true,
+	}
+	return tx.Create(&hold).Error
+}
+
+func (r *classSessionRepository) Create(ctx context.Context, m *domain.ClassSession) error {
+	return keepAppError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(m).Error; err != nil {
+			return err
+		}
+		return syncClassHold(tx, m)
+	}))
+}
+
+func (r *classSessionRepository) Update(ctx context.Context, m *domain.ClassSession) error {
+	return keepAppError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(m).Error; err != nil {
+			return err
+		}
+		return syncClassHold(tx, m)
+	}))
+}
+
+func (r *classSessionRepository) Delete(ctx context.Context, businessID, id uint) error {
+	if businessID == 0 {
+		return errNoScope
+	}
+	return keepAppError(r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("business_id = ?", businessID).Delete(&domain.ClassSession{}, id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return tx.Where("class_session_id = ? AND kind = ?", id, domain.ItemClassHold).Delete(&domain.BookingItem{}).Error
+	}))
+}

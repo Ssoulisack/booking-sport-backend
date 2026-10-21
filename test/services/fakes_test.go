@@ -75,7 +75,7 @@ type fakeBusinesses struct {
 }
 
 func (f fakeBusinesses) GetByID(_ context.Context, id uint) (*domain.Business, error) {
-	b := domain.Business{Timezone: "Asia/Bangkok", Plan: domain.Plan{Name: "Test", Limits: f.limits}}
+	b := domain.Business{Timezone: "Asia/Vientiane", Plan: domain.Plan{Name: "Test", Limits: f.limits}}
 	b.ID = id
 	return &b, nil
 }
@@ -118,9 +118,13 @@ func (f fakeResources) GetByID(_ context.Context, businessID, id uint) (*domain.
 
 // ---------- booking rules ----------
 
-type fakeRuleRepo struct{ rules map[string]*domain.BookingRule }
+type fakeRuleRepo struct {
+	rules map[string]*domain.BookingRule
+}
 
-func ruleKey(businessID uint, t string, id uint) string { return fmt.Sprintf("%d:%s:%d", businessID, t, id) }
+func ruleKey(businessID uint, t string, id uint) string {
+	return fmt.Sprintf("%d:%s:%d", businessID, t, id)
+}
 
 func (f *fakeRuleRepo) GetByScope(_ context.Context, b uint, t string, id uint) (*domain.BookingRule, error) {
 	return f.rules[ruleKey(b, t, id)], nil
@@ -137,7 +141,9 @@ func (f *fakeRuleRepo) DeleteByScope(_ context.Context, b uint, t string, id uin
 
 // ---------- opening hours ----------
 
-type fakeHours struct{ rows map[string][]domain.OpeningHour }
+type fakeHours struct {
+	rows map[string][]domain.OpeningHour
+}
 
 func newFakeHours() *fakeHours { return &fakeHours{rows: map[string][]domain.OpeningHour{}} }
 

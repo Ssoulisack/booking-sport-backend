@@ -8,12 +8,15 @@ import (
 	"context"
 	"log"
 	"strings"
+	"time"
 )
 
 type CatalogServiceImpl struct {
 	sports    output.SportRepository
 	resources output.ResourceRepository
 	coaches   output.CoachRepository
+	classes   output.ClassSessionRepository
+	bookings  output.BookingRepository
 	files     mediaFiles
 	limits    *Limits
 }
@@ -22,12 +25,14 @@ func NewCatalogService(
 	sports output.SportRepository,
 	resources output.ResourceRepository,
 	coaches output.CoachRepository,
+	classes output.ClassSessionRepository,
+	bookings output.BookingRepository,
 	storage output.FileStorage,
 	media output.MediaRepository,
 	limits *Limits,
 ) input.CatalogService {
 	return &CatalogServiceImpl{
-		sports: sports, resources: resources, coaches: coaches,
+		sports: sports, resources: resources, coaches: coaches, classes: classes, bookings: bookings,
 		files: mediaFiles{storage: storage, media: media}, limits: limits,
 	}
 }
@@ -134,6 +139,9 @@ func (s *CatalogServiceImpl) DeleteSport(ctx context.Context, businessID, id uin
 	if inUse > 0 {
 		return conflict("SPORT_HAS_RESOURCES")
 	}
+	if err := s.refuseIfUsedByClasses(ctx, businessID, "sport_id", id, "SPORT_HAS_CLASS_SESSIONS"); err != nil {
+		return err
+	}
 	if err := s.sports.Delete(ctx, businessID, id); err != nil {
 		return err
 	}
@@ -214,8 +222,11 @@ func (s *CatalogServiceImpl) UpdateResource(ctx context.Context, businessID, id 
 	return &d, nil
 }
 
-// DeleteResource will also have to refuse resources with future bookings once bookings exist (phase 3)
+// DeleteResource refuses a resource that classes use or that has upcoming bookings
 func (s *CatalogServiceImpl) DeleteResource(ctx context.Context, businessID, id uint) error {
+	if err := s.refuseIfInUse(ctx, businessID, domain.OwnerResource, id, "resource_id"); err != nil {
+		return err
+	}
 	return s.resources.Delete(ctx, businessID, id)
 }
 
@@ -308,7 +319,11 @@ func (s *CatalogServiceImpl) UpdateCoach(ctx context.Context, businessID, id uin
 	return s.GetCoach(ctx, businessID, id)
 }
 
+// DeleteCoach refuses a coach who teaches classes or has upcoming bookings
 func (s *CatalogServiceImpl) DeleteCoach(ctx context.Context, businessID, id uint) error {
+	if err := s.refuseIfInUse(ctx, businessID, domain.OwnerCoach, id, "coach_id"); err != nil {
+		return err
+	}
 	m, err := s.coaches.GetByID(ctx, businessID, id)
 	if err != nil {
 		return err
@@ -317,5 +332,32 @@ func (s *CatalogServiceImpl) DeleteCoach(ctx context.Context, businessID, id uin
 		return err
 	}
 	s.files.replaced(ctx, businessID, m.ImageKey, "")
+	return nil
+}
+
+// refuseIfUsedByClasses stops deleting something class sessions still point to
+func (s *CatalogServiceImpl) refuseIfUsedByClasses(ctx context.Context, businessID uint, column string, id uint, code string) error {
+	n, err := s.classes.Count(ctx, businessID, map[string]any{column: id})
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return conflict(code)
+	}
+	return nil
+}
+
+// refuseIfInUse stops deleting a resource or coach used by classes or by upcoming bookings
+func (s *CatalogServiceImpl) refuseIfInUse(ctx context.Context, businessID uint, ownerType string, id uint, column string) error {
+	if err := s.refuseIfUsedByClasses(ctx, businessID, column, id, "USED_BY_CLASS_SESSIONS"); err != nil {
+		return err
+	}
+	n, err := s.bookings.CountFutureForOwner(ctx, businessID, ownerType, id, time.Now())
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return conflict("HAS_UPCOMING_BOOKINGS")
+	}
 	return nil
 }

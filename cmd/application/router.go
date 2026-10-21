@@ -18,4 +18,5 @@ func SetupRoutes(app fiber.Router, handlers *AppHandler) {
 	router.SetupPlatformRoutes(api, h.authMiddleware, h.platform)
 	router.SetupManageRoutes(api, h.authMiddleware, h.catalog, h.schedule, h.rules, h.media, h.business)
 	router.SetupPublicRoutes(api, h.authMiddleware, h.invitations, h.public)
+	router.SetupBookingRoutes(api, h.authMiddleware, h.booking)
 }

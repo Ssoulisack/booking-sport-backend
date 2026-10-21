@@ -69,3 +69,13 @@ func (m *platformMailer) SendPasswordReset(to, name, resetURL string) error {
 		Note:    "This link expires in 1 hour and works once. If you did not ask for it, ignore this email: your password stays the same.",
 	})
 }
+
+func (m *platformMailer) SendBookingLink(to, businessName, code, link string) error {
+	return m.send(to, fmt.Sprintf("Your booking %s at %s", code, businessName), emailData{
+		Title:   fmt.Sprintf("Booking %s", code),
+		Message: fmt.Sprintf("Thank you for booking at %s. Keep this link to see or cancel your booking.", businessName),
+		Button:  "View my booking",
+		URL:     link,
+		Note:    "Anyone with this link can see and cancel the booking, so do not share it.",
+	})
+}

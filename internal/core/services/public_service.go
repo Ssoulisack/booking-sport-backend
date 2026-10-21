@@ -15,6 +15,7 @@ type PublicServiceImpl struct {
 	resources  output.ResourceRepository
 	coaches    output.CoachRepository
 	classes    output.ClassSessionRepository
+	bookings   output.BookingRepository
 	files      mediaFiles
 	now        func() time.Time
 }
@@ -25,10 +26,11 @@ func NewPublicService(
 	resources output.ResourceRepository,
 	coaches output.CoachRepository,
 	classes output.ClassSessionRepository,
+	bookings output.BookingRepository,
 	storage output.FileStorage,
 ) input.PublicService {
 	return &PublicServiceImpl{
-		businesses: businesses, sports: sports, resources: resources, coaches: coaches, classes: classes,
+		businesses: businesses, sports: sports, resources: resources, coaches: coaches, classes: classes, bookings: bookings,
 		files: mediaFiles{storage: storage}, now: time.Now,
 	}
 }
@@ -36,7 +38,11 @@ func NewPublicService(
 // published loads a business that may be shown publicly. Drafts, suspended and unknown
 // slugs give the same 404, so the page does not reveal that a business exists.
 func (s *PublicServiceImpl) published(ctx context.Context, slug string) (*domain.Business, error) {
-	b, err := s.businesses.GetBySlug(ctx, slug)
+	return loadPublished(ctx, s.businesses, slug)
+}
+
+func loadPublished(ctx context.Context, businesses output.BusinessRepository, slug string) (*domain.Business, error) {
+	b, err := businesses.GetBySlug(ctx, slug)
 	if err != nil {
 		if isNotFound(err) {
 			return nil, notFound("BUSINESS_NOT_FOUND")
@@ -62,6 +68,7 @@ func (s *PublicServiceImpl) Business(ctx context.Context, slug string) (*dto.Pub
 		LogoURL: s.files.url(b.LogoKey), CoverURL: s.files.url(b.CoverKey), BrandColor: b.BrandColor,
 		Description: b.Description, Address: b.Address, Phone: b.Phone, MapURL: b.MapURL,
 		SocialLinks: b.SocialLinks, BookingPolicy: b.BookingPolicy, BookingMode: b.BookingMode,
+		RequireApproval: b.RequireApproval,
 	}, nil
 }
 
@@ -128,7 +135,7 @@ func teaches(c domain.Coach, sportID uint) bool {
 	return false
 }
 
-// ClassSessions lists upcoming active sessions, soonest first
+// ClassSessions lists upcoming active sessions, soonest first, with the seats still free
 func (s *PublicServiceImpl) ClassSessions(ctx context.Context, slug string, q dto.ListQuery) (*dto.PagedResult[dto.ClassSessionDTO], error) {
 	b, err := s.published(ctx, slug)
 	if err != nil {
@@ -142,5 +149,15 @@ func (s *PublicServiceImpl) ClassSessions(ctx context.Context, slug string, q dt
 	if err != nil {
 		return nil, err
 	}
-	return pageOf(items, total, page, limit, toClassSessionDTO), nil
+	ids := mapSlice(items, func(c domain.ClassSession) uint { return c.ID })
+	taken, err := s.bookings.SeatsTaken(ctx, b.ID, ids)
+	if err != nil {
+		return nil, err
+	}
+	return pageOf(items, total, page, limit, func(c domain.ClassSession) dto.ClassSessionDTO {
+		d := toClassSessionDTO(c)
+		left := max(c.Capacity-taken[c.ID], 0)
+		d.SeatsLeft = &left
+		return d
+	}), nil
 }

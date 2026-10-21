@@ -9,7 +9,12 @@ import (
 
 type SportRepository = ScopedRepository[domain.Sport]
 type ResourceRepository = ScopedRepository[domain.Resource]
-type ClosureRepository = ScopedRepository[domain.Closure]
+
+// ClosureRepository also finds the closures (of any owner, including the venue) overlapping a period
+type ClosureRepository interface {
+	ScopedRepository[domain.Closure]
+	Overlapping(ctx context.Context, businessID uint, from, to time.Time) ([]domain.Closure, error)
+}
 
 // CoachRepository loads coaches with their sports
 type CoachRepository interface {

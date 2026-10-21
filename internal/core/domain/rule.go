@@ -25,33 +25,37 @@ type BookingRule struct {
 	MaxDaysAhead      *int
 	MinNoticeMin      *int
 	Capacity          *int // default participants for group sessions
+	// upcoming pending or confirmed bookings one customer (or guest phone) may hold; staff bookings ignore it
+	MaxActiveBookingsPerCustomer *int
 }
 
 // DefaultBookingRule is the rule every new business starts with; its staff can edit it
 func DefaultBookingRule(businessID uint) BookingRule {
 	v := func(n int) *int { return &n }
 	return BookingRule{
-		BusinessID:        businessID,
-		ScopeType:         ScopeDefault,
-		MinDurationMin:    v(60),
-		MaxDurationMin:    v(180),
-		DurationStepMin:   v(30),
-		StartStepMin:      v(30),
-		CancelBeforeHours: v(24),
-		MaxDaysAhead:      v(30),
-		MinNoticeMin:      v(60),
-		Capacity:          v(10),
+		BusinessID:                   businessID,
+		ScopeType:                    ScopeDefault,
+		MinDurationMin:               v(60),
+		MaxDurationMin:               v(180),
+		DurationStepMin:              v(30),
+		StartStepMin:                 v(30),
+		CancelBeforeHours:            v(24),
+		MaxDaysAhead:                 v(30),
+		MinNoticeMin:                 v(60),
+		Capacity:                     v(10),
+		MaxActiveBookingsPerCustomer: v(3),
 	}
 }
 
 // EffectiveRule is the result of merging rules; every field is set
 type EffectiveRule struct {
-	MinDurationMin    int `json:"min_duration_min"`
-	MaxDurationMin    int `json:"max_duration_min"`
-	DurationStepMin   int `json:"duration_step_min"`
-	StartStepMin      int `json:"start_step_min"`
-	CancelBeforeHours int `json:"cancel_before_hours"`
-	MaxDaysAhead      int `json:"max_days_ahead"`
-	MinNoticeMin      int `json:"min_notice_min"`
-	Capacity          int `json:"capacity"`
+	MinDurationMin               int `json:"min_duration_min"`
+	MaxDurationMin               int `json:"max_duration_min"`
+	DurationStepMin              int `json:"duration_step_min"`
+	StartStepMin                 int `json:"start_step_min"`
+	CancelBeforeHours            int `json:"cancel_before_hours"`
+	MaxDaysAhead                 int `json:"max_days_ahead"`
+	MinNoticeMin                 int `json:"min_notice_min"`
+	Capacity                     int `json:"capacity"`
+	MaxActiveBookingsPerCustomer int `json:"max_active_bookings_per_customer"`
 }

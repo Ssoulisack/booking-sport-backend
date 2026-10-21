@@ -81,7 +81,7 @@ func TestRulesAreIsolatedPerBusiness(t *testing.T) {
 	ctx := context.Background()
 	mustSet(t, svc, bizA, domain.ScopeDefault, 0, dto.RuleRequest{
 		MinDurationMin: ip(60), MaxDurationMin: ip(120), DurationStepMin: ip(60), StartStepMin: ip(60),
-		CancelBeforeHours: ip(2), MaxDaysAhead: ip(7), MinNoticeMin: ip(0), Capacity: ip(4),
+		CancelBeforeHours: ip(2), MaxDaysAhead: ip(7), MinNoticeMin: ip(0), Capacity: ip(4), MaxActiveBookingsPerCustomer: ip(2),
 	})
 	e, err := svc.Effective(ctx, bizB, 0, 0)
 	if err != nil {

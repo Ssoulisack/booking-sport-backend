@@ -33,6 +33,7 @@ func toRuleDTO(r domain.BookingRule) dto.RuleDTO {
 			DurationStepMin: r.DurationStepMin, StartStepMin: r.StartStepMin,
 			CancelBeforeHours: r.CancelBeforeHours, MaxDaysAhead: r.MaxDaysAhead,
 			MinNoticeMin: r.MinNoticeMin, Capacity: r.Capacity,
+			MaxActiveBookingsPerCustomer: r.MaxActiveBookingsPerCustomer,
 		},
 	}
 }
@@ -59,6 +60,7 @@ func mergeRules(chain ...*domain.BookingRule) domain.EffectiveRule {
 		override(&e.MaxDaysAhead, r.MaxDaysAhead)
 		override(&e.MinNoticeMin, r.MinNoticeMin)
 		override(&e.Capacity, r.Capacity)
+		override(&e.MaxActiveBookingsPerCustomer, r.MaxActiveBookingsPerCustomer)
 	}
 	return e
 }
@@ -78,6 +80,8 @@ func validateEffective(e domain.EffectiveRule) error {
 		return badRequest("MAX_DAYS_AHEAD_MUST_BE_POSITIVE")
 	case e.Capacity < 1:
 		return badRequest("CAPACITY_MUST_BE_AT_LEAST_1")
+	case e.MaxActiveBookingsPerCustomer < 1:
+		return badRequest("MAX_ACTIVE_BOOKINGS_MUST_BE_AT_LEAST_1")
 	}
 	return nil
 }
@@ -153,6 +157,7 @@ func (s *RuleServiceImpl) SetRule(ctx context.Context, businessID uint, scopeTyp
 		DurationStepMin: req.DurationStepMin, StartStepMin: req.StartStepMin,
 		CancelBeforeHours: req.CancelBeforeHours, MaxDaysAhead: req.MaxDaysAhead,
 		MinNoticeMin: req.MinNoticeMin, Capacity: req.Capacity,
+		MaxActiveBookingsPerCustomer: req.MaxActiveBookingsPerCustomer,
 	}
 
 	var chain []*domain.BookingRule
@@ -188,7 +193,7 @@ func (s *RuleServiceImpl) SetRule(ctx context.Context, businessID uint, scopeTyp
 func allSet(r dto.RuleRequest) bool {
 	return r.MinDurationMin != nil && r.MaxDurationMin != nil && r.DurationStepMin != nil &&
 		r.StartStepMin != nil && r.CancelBeforeHours != nil && r.MaxDaysAhead != nil &&
-		r.MinNoticeMin != nil && r.Capacity != nil
+		r.MinNoticeMin != nil && r.Capacity != nil && r.MaxActiveBookingsPerCustomer != nil
 }
 
 func (s *RuleServiceImpl) DeleteRule(ctx context.Context, businessID uint, scopeType string, scopeID uint) error {

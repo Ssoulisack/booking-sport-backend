@@ -74,6 +74,7 @@ func (s *BusinessServiceImpl) toSettingsDTO(b *domain.Business) *dto.SettingsDTO
 			LogoKey: b.LogoKey, CoverKey: b.CoverKey, BrandColor: b.BrandColor, Description: b.Description,
 			Address: b.Address, Phone: b.Phone, MapURL: b.MapURL, SocialLinks: b.SocialLinks,
 			BookingPolicy: b.BookingPolicy, BookingMode: b.BookingMode,
+			RequireApproval: b.RequireApproval,
 		},
 		ID: b.ID, Status: b.Status(), LogoURL: s.files.url(b.LogoKey), CoverURL: s.files.url(b.CoverKey),
 		PublicPath: "/b/" + b.Slug, PublishedAt: b.PublishedAt,
@@ -164,6 +165,7 @@ func (s *BusinessServiceImpl) UpdateSettings(ctx context.Context, businessID uin
 	b.LogoKey, b.CoverKey, b.BrandColor = req.LogoKey, req.CoverKey, req.BrandColor
 	b.Description, b.Address, b.Phone, b.MapURL = req.Description, strings.TrimSpace(req.Address), strings.TrimSpace(req.Phone), req.MapURL
 	b.SocialLinks, b.BookingPolicy, b.BookingMode = req.SocialLinks, req.BookingPolicy, req.BookingMode
+	b.RequireApproval = req.RequireApproval
 	if err := s.businesses.Update(ctx, b); err != nil {
 		return nil, err
 	}

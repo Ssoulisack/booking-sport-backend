@@ -54,7 +54,7 @@ func newApp(t *testing.T) *fiber.App {
 	pg := postgres.Config{
 		Host: env("E2E_DB_HOST", "localhost"), Port: env("E2E_DB_PORT", "5432"),
 		User: env("E2E_DB_USER", "booking"), Password: env("E2E_DB_PASSWORD", "booking"),
-		DBName: env("E2E_DB_NAME", "booking_test"), SSLMode: "disable", TimeZone: "Asia/Bangkok",
+		DBName: env("E2E_DB_NAME", "booking_test"), SSLMode: "disable", TimeZone: "Asia/Vientiane",
 	}
 	if (pg.Host != "localhost" && pg.Host != "127.0.0.1") || !strings.HasSuffix(pg.DBName, "_test") {
 		t.Fatalf("refusing to wipe %s/%s: only a local *_test database is allowed", pg.Host, pg.DBName)
@@ -409,6 +409,12 @@ func TestPlatformWorkflow(t *testing.T) {
 	a.expect(401, "TOKEN_REVOKED", "GET", "/auth/me", customer, nil)
 	a.expect(401, "INVALID_CREDENTIALS", "POST", "/auth/login", "", map[string]any{"email": "customer@test.la", "password": pw})
 	a.expect(200, "", "POST", "/auth/login", "", map[string]any{"email": "customer@test.la", "password": "new-password-456"})
+
+	// --- rate limit: forgot-password allows 5 per 15 minutes per client (2 used above) ---
+	for range 3 {
+		a.expect(200, "", "POST", "/auth/forgot-password", "", map[string]any{"email": "nobody@test.la"})
+	}
+	a.expect(429, "RATE_LIMIT_EXCEEDED", "POST", "/auth/forgot-password", "", map[string]any{"email": "nobody@test.la"})
 }
 
 // num turns an id read from a reply back into a JSON number for request bodies

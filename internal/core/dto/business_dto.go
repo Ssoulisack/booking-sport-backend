@@ -48,21 +48,22 @@ type InviteOwnerRequest struct {
 // ---------- business settings ----------
 
 type SettingsRequest struct {
-	Name          string            `json:"name"`
-	Slug          string            `json:"slug"` // can change only until the first publish
-	Timezone      string            `json:"timezone"`
-	Currency      string            `json:"currency"`
-	Language      string            `json:"language"`
-	LogoKey       string            `json:"logo_key"`
-	CoverKey      string            `json:"cover_key"`
-	BrandColor    string            `json:"brand_color"`
-	Description   string            `json:"description"`
-	Address       string            `json:"address"`
-	Phone         string            `json:"phone"`
-	MapURL        string            `json:"map_url"`
-	SocialLinks   map[string]string `json:"social_links"`
-	BookingPolicy string            `json:"booking_policy"`
-	BookingMode   string            `json:"booking_mode"`
+	Name            string            `json:"name"`
+	Slug            string            `json:"slug"` // can change only until the first publish
+	Timezone        string            `json:"timezone"`
+	Currency        string            `json:"currency"`
+	Language        string            `json:"language"`
+	LogoKey         string            `json:"logo_key"`
+	CoverKey        string            `json:"cover_key"`
+	BrandColor      string            `json:"brand_color"`
+	Description     string            `json:"description"`
+	Address         string            `json:"address"`
+	Phone           string            `json:"phone"`
+	MapURL          string            `json:"map_url"`
+	SocialLinks     map[string]string `json:"social_links"`
+	BookingPolicy   string            `json:"booking_policy"`
+	BookingMode     string            `json:"booking_mode"`
+	RequireApproval bool              `json:"require_approval"`
 }
 
 type SettingsDTO struct {
@@ -167,21 +168,22 @@ type ResetPasswordRequest struct {
 // ---------- public ----------
 
 type PublicBusinessDTO struct {
-	Name          string            `json:"name"`
-	Slug          string            `json:"slug"`
-	Timezone      string            `json:"timezone"`
-	Currency      string            `json:"currency"`
-	Language      string            `json:"language"`
-	LogoURL       string            `json:"logo_url"`
-	CoverURL      string            `json:"cover_url"`
-	BrandColor    string            `json:"brand_color"`
-	Description   string            `json:"description"`
-	Address       string            `json:"address"`
-	Phone         string            `json:"phone"`
-	MapURL        string            `json:"map_url"`
-	SocialLinks   map[string]string `json:"social_links"`
-	BookingPolicy string            `json:"booking_policy"`
-	BookingMode   string            `json:"booking_mode"`
+	Name            string            `json:"name"`
+	Slug            string            `json:"slug"`
+	Timezone        string            `json:"timezone"`
+	Currency        string            `json:"currency"`
+	Language        string            `json:"language"`
+	LogoURL         string            `json:"logo_url"`
+	CoverURL        string            `json:"cover_url"`
+	BrandColor      string            `json:"brand_color"`
+	Description     string            `json:"description"`
+	Address         string            `json:"address"`
+	Phone           string            `json:"phone"`
+	MapURL          string            `json:"map_url"`
+	SocialLinks     map[string]string `json:"social_links"`
+	BookingPolicy   string            `json:"booking_policy"`
+	BookingMode     string            `json:"booking_mode"`
+	RequireApproval bool              `json:"require_approval"`
 }
 
 // PublicCoachDTO leaves out the coach's private phone number

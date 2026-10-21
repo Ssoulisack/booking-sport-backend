@@ -129,7 +129,7 @@ func (s *PlatformServiceImpl) CreateBusiness(ctx context.Context, actor *domain.
 
 	b := domain.Business{
 		Name: req.Name, Slug: slug, PlanID: plan.ID,
-		Timezone: "Asia/Bangkok", Currency: "LAK", Language: "en", BookingMode: domain.BookingModeAccount,
+		Timezone: "Asia/Vientiane", Currency: "LAK", Language: "en", BookingMode: domain.BookingModeAccount,
 	}
 	if err := s.businesses.CreateWithDefaults(ctx, &b, domain.DefaultBookingRule(0)); err != nil {
 		return nil, err
