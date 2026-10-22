@@ -1,6 +1,7 @@
 package mailer
 
 import (
+	"backend/internal/core/domain"
 	"backend/internal/core/dto"
 	"backend/internal/core/port/output"
 	"bytes"
@@ -41,6 +42,9 @@ type emailData struct {
 }
 
 func (m *platformMailer) send(to, subject string, d emailData) error {
+	if domain.IsGeneratedEmail(to) {
+		return nil // a stand-in address of an account without a real email: nothing can be delivered
+	}
 	d.AppName = m.appName
 	var html bytes.Buffer
 	if err := emailLayout.Execute(&html, d); err != nil {

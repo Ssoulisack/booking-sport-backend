@@ -23,6 +23,7 @@ type (
 
 		ListUsers(c *fiber.Ctx) error
 		SetUserStatus(c *fiber.Ctx) error
+		SetUserPassword(c *fiber.Ctx) error
 	}
 	platformHandler struct {
 		svc input.PlatformService
@@ -135,4 +136,17 @@ func (h *platformHandler) SetUserStatus(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 	return done(c, "UPDATED", h.svc.SetUserStatus(c.UserContext(), middleware.CurrentUser(c).ID, id, req.Status))
+}
+
+// SetUserPassword sets a new password for someone who cannot reset it by email (no real address)
+func (h *platformHandler) SetUserPassword(c *fiber.Ctx) error {
+	id, err := idParam(c, "id")
+	if err != nil {
+		return fail(c, err)
+	}
+	var req dto.PasswordRequest
+	if err := bind(c, &req); err != nil {
+		return fail(c, err)
+	}
+	return done(c, "PASSWORD_UPDATED", h.svc.SetUserPassword(c.UserContext(), id, req.Password))
 }

@@ -245,7 +245,7 @@ func (s *BusinessServiceImpl) Usage(ctx context.Context, businessID uint) (*dto.
 
 func toMemberDTO(m domain.Membership) dto.MemberDTO {
 	return dto.MemberDTO{
-		UserID: m.UserID, Name: m.User.Name, Email: m.User.Email,
+		UserID: m.UserID, Name: m.User.Name, Email: m.User.ContactEmail(),
 		Role: m.Role, Active: m.Active, JoinedAt: m.CreatedAt,
 	}
 }

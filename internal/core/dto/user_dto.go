@@ -9,9 +9,13 @@ type UserDTO struct {
 	Password     string `json:"password,omitempty"`
 	Phone        string `json:"phone"`
 	PlatformRole string `json:"platform_role"`
-	Status       bool   `json:"status"`
-	CreatedAt    string `json:"created_at"`
-	UpdatedAt    string `json:"updated_at"`
+	Nationality  string `json:"nationality"`
+	// the email is a stand-in: the person should add a real one in My account
+	EmailGenerated bool   `json:"email_generated"`
+	CustomerNo     string `json:"customer_no"`
+	Status         bool   `json:"status"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 type UserJWTDTO struct {

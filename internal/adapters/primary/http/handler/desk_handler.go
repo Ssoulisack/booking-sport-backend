@@ -18,11 +18,13 @@ type (
 	DeskHandler interface {
 		ListBookings(c *fiber.Ctx) error
 		GetBooking(c *fiber.Ctx) error
+		Availability(c *fiber.Ctx) error
 		CreateBooking(c *fiber.Ctx) error
 		ChangeStatus(c *fiber.Ctx) error
 		SetPayment(c *fiber.Ctx) error
 		Calendar(c *fiber.Ctx) error
 		Customers(c *fiber.Ctx) error
+		FindCustomer(c *fiber.Ctx) error
 	}
 	deskHandler struct {
 		svc input.DeskService
@@ -53,6 +55,16 @@ func (h *deskHandler) ListBookings(c *fiber.Ctx) error {
 }
 
 func (h *deskHandler) GetBooking(c *fiber.Ctx) error { return scopedGet(c, h.svc.GetBooking) }
+
+// Availability is the staff version of the public free times (same query: date + resource / coach)
+func (h *deskHandler) Availability(c *fiber.Ctx) error {
+	var q dto.AvailabilityQuery
+	if err := c.QueryParser(&q); err != nil {
+		return fail(c, response.ErrorBadRequest("INVALID_QUERY"))
+	}
+	res, err := h.svc.DeskAvailability(c.UserContext(), middleware.BusinessID(c), q)
+	return ok(c, res, err)
+}
 
 func (h *deskHandler) CreateBooking(c *fiber.Ctx) error {
 	var req dto.StaffBookingRequest
@@ -85,6 +97,12 @@ func (h *deskHandler) Calendar(c *fiber.Ctx) error {
 }
 
 func (h *deskHandler) Customers(c *fiber.Ctx) error { return scopedList(c, h.svc.Customers) }
+
+// FindCustomer expects ?q= a phone number, customer number (C0042) or email
+func (h *deskHandler) FindCustomer(c *fiber.Ctx) error {
+	res, err := h.svc.FindCustomer(c.UserContext(), middleware.BusinessID(c), c.Query("q"))
+	return ok(c, res, err)
+}
 
 func NewReportHandler(svc input.ReportService) ReportHandler { return &reportHandler{svc: svc} }
 

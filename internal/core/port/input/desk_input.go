@@ -10,12 +10,16 @@ import (
 type DeskService interface {
 	ListBookings(ctx context.Context, businessID uint, q dto.BookingQuery) (*dto.PagedResult[dto.BookingDTO], error)
 	GetBooking(ctx context.Context, businessID, id uint) (*dto.BookingDTO, error)
+	// DeskAvailability lists the free starts staff may book (no notice or days-ahead limit)
+	DeskAvailability(ctx context.Context, businessID uint, q dto.AvailabilityQuery) (*dto.AvailabilityDTO, error)
 	// CreateForCustomer books on behalf of a customer or a walk-in; staff skip only the timing limits
 	CreateForCustomer(ctx context.Context, businessID uint, actor *domain.User, req dto.StaffBookingRequest) (*dto.BookingDTO, error)
 	ChangeStatus(ctx context.Context, businessID, id uint, req dto.StatusChangeRequest) (*dto.BookingDTO, error)
 	SetPayment(ctx context.Context, businessID uint, actor *domain.User, id uint, req dto.PaymentRequest) (*dto.BookingDTO, error)
 	Calendar(ctx context.Context, businessID uint, date string, days int) (*dto.CalendarDTO, error)
 	Customers(ctx context.Context, businessID uint, q dto.ListQuery) (*dto.PagedResult[dto.CustomerDTO], error)
+	// FindCustomer finds an account by phone, customer number or email (shown before booking for it)
+	FindCustomer(ctx context.Context, businessID uint, q string) (*dto.CustomerMatchDTO, error)
 }
 
 // ReportService summarises a business's bookings and money for a period

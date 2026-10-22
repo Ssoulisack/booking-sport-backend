@@ -251,7 +251,7 @@ func TestPlatformWorkflow(t *testing.T) {
 	freeID := freePlan["id"]
 
 	// a customer is not a Super Admin
-	customer := a.expect(201, "", "POST", "/auth/register", "", map[string]any{"name": "Cus Tomer", "email": "customer@test.la", "password": pw}).str("data.access_token")
+	customer := a.expect(201, "", "POST", "/auth/register", "", map[string]any{"name": "Cus Tomer", "email": "customer@test.la", "password": pw, "nationality": "TH"}).str("data.access_token")
 	a.expect(403, "", "GET", "/platform/businesses", customer, nil)
 
 	// --- create two businesses ---

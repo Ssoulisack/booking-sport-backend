@@ -25,6 +25,7 @@ func SetupPlatformRoutes(router fiber.Router, auth *middleware.Auth, platform ha
 
 	p.Get("/users", platform.ListUsers)
 	p.Patch("/users/:id/status", platform.SetUserStatus)
+	p.Post("/users/:id/password", platform.SetUserPassword)
 }
 
 // SetupPublicRoutes registers routes anyone can call: invite links and published booking pages

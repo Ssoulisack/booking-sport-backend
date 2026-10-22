@@ -87,3 +87,30 @@ func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool,
 	err := r.db.WithContext(ctx).Model(&domain.User{}).Where("email = ?", email).Count(&count).Error
 	return count > 0, exception.HandleGormError(err)
 }
+
+func (r *userRepository) FindByPhone(ctx context.Context, phone string) (*domain.User, error) {
+	var user domain.User
+	if err := r.db.WithContext(ctx).Where("phone = ? AND phone <> ''", phone).First(&user).Error; err != nil {
+		return nil, exception.HandleGormError(err)
+	}
+	return &user, nil
+}
+
+func (r *userRepository) PhoneTaken(ctx context.Context, phone string, exceptID uint) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.User{}).Where("phone = ? AND id <> ?", phone, exceptID).Count(&count).Error
+	return count > 0, exception.HandleGormError(err)
+}
+
+func (r *userRepository) EmailTaken(ctx context.Context, email string, exceptID uint) (bool, error) {
+	var count int64
+	err := r.db.WithContext(ctx).Model(&domain.User{}).Where("email = ? AND id <> ?", email, exceptID).Count(&count).Error
+	return count > 0, exception.HandleGormError(err)
+}
+
+func (r *userRepository) UpdateProfile(ctx context.Context, u *domain.User) error {
+	return requireAffected(r.db.WithContext(ctx).Model(&domain.User{}).Where("id = ?", u.ID).Updates(map[string]any{
+		"name": u.Name, "email": u.Email, "username": u.Username, "phone": u.Phone,
+		"nationality": u.Nationality, "email_generated": u.EmailGenerated,
+	}))
+}

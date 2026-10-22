@@ -23,5 +23,6 @@ func SetupAuthRoutes(router fiber.Router, authHandler handler.AuthHandler, auth 
 	// Private - routes that require authentication
 	a.Post("/refresh", jwt.AccessRefreshToken, authHandler.Refresh)
 	a.Get("/me", auth.RequireUser, authHandler.Me)
+	a.Put("/me", auth.RequireUser, authHandler.UpdateMe)
 	router.Get("/me/businesses", auth.RequireUser, authHandler.MyBusinesses)
 }

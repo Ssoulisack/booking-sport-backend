@@ -188,7 +188,7 @@ func (s *InvitationServiceImpl) Accept(ctx context.Context, token string, actor 
 			return nil, response.NewError(http.StatusUnauthorized, "LOGIN_AS_INVITED_EMAIL")
 		}
 	case isNotFound(err):
-		user, err = createUser(ctx, s.users, dto.RegisterDTO{Name: req.Name, Email: inv.Email, Password: req.Password, Phone: req.Phone})
+		user, err = createUser(ctx, s.users, dto.RegisterDTO{Name: req.Name, Email: inv.Email, Password: req.Password, Phone: req.Phone}, false)
 		if err != nil {
 			return nil, err
 		}

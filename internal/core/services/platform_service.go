@@ -5,9 +5,11 @@ import (
 	"backend/internal/core/dto"
 	"backend/internal/core/port/input"
 	"backend/internal/core/port/output"
+	"backend/pkg/utils"
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -256,4 +258,15 @@ func (s *PlatformServiceImpl) SetUserStatus(ctx context.Context, actorID, target
 		return badRequest("CANNOT_DISABLE_YOURSELF")
 	}
 	return s.users.SetStatus(ctx, targetID, status)
+}
+
+func (s *PlatformServiceImpl) SetUserPassword(ctx context.Context, targetID uint, password string) error {
+	if err := validPassword(password); err != nil {
+		return err
+	}
+	hash, err := utils.Encrypt(password)
+	if err != nil {
+		return err
+	}
+	return s.users.SetPassword(ctx, targetID, hash, time.Now())
 }

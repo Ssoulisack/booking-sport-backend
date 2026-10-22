@@ -14,7 +14,11 @@ type User struct {
 	PasswordHash []byte
 	Name         string `gorm:"type:varchar(255);not null"`
 	Avatar       string `gorm:"type:varchar(255)"`
-	Phone        string `gorm:"type:varchar(20)"`
+	Phone        string `gorm:"type:varchar(20)"` // 20xxxxxxxx (Lao mobile); one account per number, see migration
+	// ISO 3166-1 code chosen at registration ("LA", "TH"…); empty for older accounts until they choose
+	Nationality string `gorm:"type:varchar(2);not null;default:''"`
+	// the email is a stand-in (no real address yet): never shown to staff, never sent to
+	EmailGenerated bool `gorm:"not null;default:false"`
 	PlatformRole string `gorm:"type:varchar(20);not null;default:''"` // "super_admin" or empty
 	Verified     bool   `gorm:"type:boolean;not null;default:false"`
 	Status       bool   `gorm:"type:boolean;not null;default:true"`
@@ -24,3 +28,11 @@ type User struct {
 }
 
 func (u User) IsSuperAdmin() bool { return u.PlatformRole == PlatformRoleSuperAdmin }
+
+// ContactEmail is the address to show or write to: empty when the account has only a stand-in
+func (u User) ContactEmail() string {
+	if u.EmailGenerated || IsGeneratedEmail(u.Email) {
+		return ""
+	}
+	return u.Email
+}

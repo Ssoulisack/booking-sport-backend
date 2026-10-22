@@ -254,6 +254,20 @@ func (s *BookingServiceImpl) Availability(ctx context.Context, slug string, q dt
 	if err != nil {
 		return nil, err
 	}
+	return s.availability(ctx, b, q, false)
+}
+
+// DeskAvailability is what staff may book: no minimum notice or days-ahead limit, and the
+// business need not be published yet (the same rules CreateForCustomer applies)
+func (s *BookingServiceImpl) DeskAvailability(ctx context.Context, businessID uint, q dto.AvailabilityQuery) (*dto.AvailabilityDTO, error) {
+	b, _, err := s.business(ctx, businessID)
+	if err != nil {
+		return nil, err
+	}
+	return s.availability(ctx, b, q, true)
+}
+
+func (s *BookingServiceImpl) availability(ctx context.Context, b *domain.Business, q dto.AvailabilityQuery, staff bool) (*dto.AvailabilityDTO, error) {
 	loc := locationOf(b)
 	day, err := time.ParseInLocation("2006-01-02", q.Date, loc)
 	if err != nil {
@@ -263,7 +277,7 @@ func (s *BookingServiceImpl) Availability(ctx context.Context, slug string, q dt
 	if err != nil {
 		return nil, err
 	}
-	slots, rule, err := s.slotsFor(ctx, b, t, day, false)
+	slots, rule, err := s.slotsFor(ctx, b, t, day, staff)
 	if err != nil {
 		return nil, err
 	}
@@ -668,7 +682,8 @@ func toBookingDTO(b domain.Booking) dto.BookingDTO {
 		d.SportName = b.Sport.Name
 	}
 	if b.Customer != nil {
-		d.CustomerName, d.CustomerEmail = b.Customer.Name, b.Customer.Email
+		d.CustomerName, d.CustomerEmail = b.Customer.Name, b.Customer.ContactEmail()
+		d.CustomerPhone, d.CustomerNo = b.Customer.Phone, domain.FormatCustomerNo(b.Customer.ID)
 	}
 	return d
 }

@@ -99,10 +99,14 @@ func (s *BookingServiceImpl) CreateForCustomer(ctx context.Context, businessID u
 		return nil, badRequest("NOTES_TOO_LONG")
 	}
 	who := &booker{staff: actor}
-	if email := normalizeEmail(req.CustomerEmail); email != "" {
-		customer, err := s.users.FindByEmail(ctx, email)
+	find := strings.TrimSpace(req.Customer)
+	if find == "" {
+		find = req.CustomerEmail
+	}
+	if strings.TrimSpace(find) != "" {
+		customer, err := s.findAccount(ctx, find)
 		if err != nil {
-			return nil, orBadRequest(err, "CUSTOMER_NOT_FOUND")
+			return nil, err
 		}
 		who.customer = customer
 	} else {
@@ -320,7 +324,8 @@ func (s *BookingServiceImpl) Customers(ctx context.Context, businessID uint, q d
 	}
 	return pageOf(rows, total, page, limit, func(r output.CustomerRow) dto.CustomerDTO {
 		return dto.CustomerDTO{
-			UserID: r.UserID, Name: r.Name, Email: r.Email, Phone: r.Phone,
+			UserID: r.UserID, CustomerNo: domain.FormatCustomerNo(r.UserID), Name: r.Name, Phone: r.Phone,
+			Email:    contactEmail(r.Email),
 			Bookings: r.Bookings, LastBookingAt: r.LastBookingAt,
 		}
 	}), nil
@@ -340,4 +345,57 @@ func (s *BookingServiceImpl) notifyStatusChange(bk *domain.Booking, status, reas
 	if err := s.mailer.SendBookingUpdate(to, name, bk.Business.Name, bk.Code, status, reason, link); err != nil {
 		log.Printf("⚠️  status email for booking %s failed: %v", bk.Code, err)
 	}
+}
+
+// findAccount finds a customer's account by what they can tell staff: phone number, customer number
+// (C0042) or email
+func (s *BookingServiceImpl) findAccount(ctx context.Context, q string) (*domain.User, error) {
+	q = strings.TrimSpace(q)
+	var u *domain.User
+	var err error
+	switch {
+	case strings.Contains(q, "@"):
+		u, err = s.users.FindByEmail(ctx, normalizeEmail(q))
+	case strings.HasPrefix(strings.ToUpper(q), "C"):
+		id, ok := domain.ParseCustomerNo(q)
+		if !ok {
+			return nil, badRequest("CUSTOMER_NOT_FOUND")
+		}
+		u, err = s.users.FindByID(ctx, id)
+	default:
+		phone, ok := domain.NormalizePhone(q)
+		if !ok {
+			return nil, badRequest("CUSTOMER_NOT_FOUND")
+		}
+		u, err = s.users.FindByPhone(ctx, phone)
+	}
+	if err != nil {
+		return nil, orBadRequest(err, "CUSTOMER_NOT_FOUND")
+	}
+	if !u.Status {
+		return nil, badRequest("CUSTOMER_NOT_FOUND")
+	}
+	return u, nil
+}
+
+// FindCustomer shows staff whose account it is before they book for them
+func (s *BookingServiceImpl) FindCustomer(ctx context.Context, businessID uint, q string) (*dto.CustomerMatchDTO, error) {
+	if _, _, err := s.business(ctx, businessID); err != nil {
+		return nil, err
+	}
+	u, err := s.findAccount(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return &dto.CustomerMatchDTO{
+		UserID: u.ID, CustomerNo: domain.FormatCustomerNo(u.ID), Name: u.Name, Phone: u.Phone, Email: u.ContactEmail(),
+	}, nil
+}
+
+// contactEmail hides stand-in addresses from staff
+func contactEmail(email string) string {
+	if domain.IsGeneratedEmail(email) {
+		return ""
+	}
+	return email
 }

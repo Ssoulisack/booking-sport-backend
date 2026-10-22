@@ -100,10 +100,12 @@ func SetupManageRoutes(
 	b.Get("/bookings", staff, desk.ListBookings)
 	b.Get("/bookings/:id", staff, desk.GetBooking)
 	b.Post("/bookings", staff, desk.CreateBooking)
+	b.Get("/availability", staff, desk.Availability)
 	b.Post("/bookings/:id/status", staff, desk.ChangeStatus)
 	b.Post("/bookings/:id/payment", staff, desk.SetPayment)
 	b.Get("/calendar", staff, desk.Calendar)
 	b.Get("/customers", staff, desk.Customers)
+	b.Get("/customers/find", staff, desk.FindCustomer)
 
 	// reports and finance: managers and the owner; the daily cash-up also staff (to close the till)
 	b.Get("/reports/cash-up", staff, reports.CashUp)

@@ -12,6 +12,8 @@ type AuthService interface {
 	Refresh(ctx context.Context, userID uint, issuedAt int64) (*dto.AuthResponseDTO, error)
 	Me(ctx context.Context, userID uint) (*dto.UserDTO, error)
 	MyBusinesses(ctx context.Context, userID uint) ([]dto.MyBusinessDTO, error)
+	// UpdateProfile changes the person's own name, nationality, phone and email
+	UpdateProfile(ctx context.Context, userID uint, req dto.ProfileRequest) (*dto.UserDTO, error)
 	// ForgotPassword always succeeds from the caller's view, so it cannot reveal which emails exist
 	ForgotPassword(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error

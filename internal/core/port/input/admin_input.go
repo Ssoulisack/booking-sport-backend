@@ -106,6 +106,8 @@ type PlatformService interface {
 
 	ListUsers(ctx context.Context, q dto.ListQuery) (*dto.PagedResult[dto.UserDTO], error)
 	SetUserStatus(ctx context.Context, actorID, targetID uint, status bool) error
+	// SetUserPassword gives someone a new password when they cannot reset it by email; their logins end
+	SetUserPassword(ctx context.Context, targetID uint, password string) error
 }
 
 // InvitationService serves the invite link: look at an invite, then accept it

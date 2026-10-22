@@ -101,7 +101,10 @@ func moneyList(m map[string]int64) []dto.Money {
 
 func contactOf(b domain.Booking) string {
 	if b.Customer != nil {
-		return b.Customer.Email
+		if email := b.Customer.ContactEmail(); email != "" {
+			return email
+		}
+		return b.Customer.Phone
 	}
 	return b.GuestPhone
 }
@@ -381,7 +384,7 @@ func (s *ReportServiceImpl) Unpaid(ctx context.Context, businessID uint, q dto.R
 			Phone: b.GuestPhone, Email: b.GuestEmail, Amount: b.TotalPrice, Currency: b.Currency,
 		}
 		if b.Customer != nil {
-			row.Phone, row.Email = b.Customer.Phone, b.Customer.Email
+			row.Phone, row.Email = b.Customer.Phone, b.Customer.ContactEmail()
 		}
 		out = append(out, row)
 	}

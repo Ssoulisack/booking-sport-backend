@@ -58,7 +58,7 @@ func updateSettings(a api, m, owner string, changes map[string]any) {
 }
 
 func register(a api, name, email string) string {
-	return a.expect(201, "", "POST", "/auth/register", "", map[string]any{"name": name, "email": email, "password": "password123"}).str("data.access_token")
+	return a.expect(201, "", "POST", "/auth/register", "", map[string]any{"name": name, "email": email, "password": "password123", "nationality": "TH"}).str("data.access_token")
 }
 
 func guest(n int) map[string]any {

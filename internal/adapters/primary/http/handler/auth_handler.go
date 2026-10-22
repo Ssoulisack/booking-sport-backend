@@ -17,6 +17,7 @@ type (
 		Login(c *fiber.Ctx) error
 		Refresh(c *fiber.Ctx) error
 		Me(c *fiber.Ctx) error
+		UpdateMe(c *fiber.Ctx) error
 		MyBusinesses(c *fiber.Ctx) error
 		ForgotPassword(c *fiber.Ctx) error
 		ResetPassword(c *fiber.Ctx) error
@@ -92,4 +93,14 @@ func (h *authHandler) ResetPassword(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 	return done(c, "PASSWORD_UPDATED", h.authService.ResetPassword(c.UserContext(), req))
+}
+
+// UpdateMe changes the logged-in person's name, nationality, phone and email
+func (h *authHandler) UpdateMe(c *fiber.Ctx) error {
+	var req dto.ProfileRequest
+	if err := bind(c, &req); err != nil {
+		return fail(c, err)
+	}
+	res, err := h.authService.UpdateProfile(c.UserContext(), middleware.CurrentUser(c).ID, req)
+	return ok(c, res, err)
 }

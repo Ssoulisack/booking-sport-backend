@@ -54,7 +54,7 @@ func NewAuthService(
 
 // Register creates a customer account. Business members join through invitations.
 func (s *AuthServiceImpl) Register(ctx context.Context, req dto.RegisterDTO) (*dto.AuthResponseDTO, error) {
-	user, err := createUser(ctx, s.userRepo, req)
+	user, err := createUser(ctx, s.userRepo, req, true)
 	if err != nil {
 		return nil, err
 	}
@@ -68,25 +68,70 @@ func validPassword(password string) error {
 	return nil
 }
 
-// createUser validates a registration and stores a plain account (no platform role)
-func createUser(ctx context.Context, repo output.UserRepository, req dto.RegisterDTO) (*domain.User, error) {
-	email := normalizeEmail(req.Email)
-	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
-		return nil, badRequest("INVALID_EMAIL")
+// identity checks the contact details of an account (new, or exceptID when changing one) and
+// returns them normalized. With needNationality the nationality must be chosen; "LA" needs a phone
+// and gets a stand-in email when none is given, any other nationality needs a real email.
+// An account phone is always a Lao mobile number, stored as 20xxxxxxxx, whatever the nationality:
+// foreigners add one if they have a Lao number, otherwise they leave it empty.
+func identity(ctx context.Context, repo output.UserRepository, exceptID uint, needNationality bool,
+	nationality, phoneIn, emailIn string) (email, phone string, generated bool, err error) {
+	nationality = strings.ToUpper(strings.TrimSpace(nationality))
+	switch {
+	case nationality == "" && needNationality:
+		return "", "", false, badRequest("NATIONALITY_REQUIRED")
+	case nationality != "" && !domain.ValidNationality(nationality):
+		return "", "", false, badRequest("INVALID_NATIONALITY")
 	}
+	lao := nationality == domain.NationalityLaos
+
+	if strings.TrimSpace(phoneIn) != "" {
+		var ok bool
+		if phone, ok = domain.NormalizePhone(phoneIn); !ok || !domain.IsLaoPhone(phone) {
+			return "", "", false, badRequest("INVALID_PHONE")
+		}
+		taken, err := repo.PhoneTaken(ctx, phone, exceptID)
+		if err != nil {
+			return "", "", false, err
+		}
+		if taken {
+			return "", "", false, conflict("PHONE_ALREADY_REGISTERED")
+		}
+	} else if lao {
+		return "", "", false, badRequest("PHONE_REQUIRED")
+	}
+
+	email = normalizeEmail(emailIn)
+	if email == "" || domain.IsGeneratedEmail(email) {
+		if !lao {
+			return "", "", false, badRequest("EMAIL_REQUIRED")
+		}
+		return domain.GeneratedEmail(phone), phone, true, nil
+	}
+	if addr, err := mail.ParseAddress(email); err != nil || addr.Address != email {
+		return "", "", false, badRequest("INVALID_EMAIL")
+	}
+	taken, err := repo.EmailTaken(ctx, email, exceptID)
+	if err != nil {
+		return "", "", false, err
+	}
+	if taken {
+		return "", "", false, conflict("EMAIL_ALREADY_REGISTERED")
+	}
+	return email, phone, false, nil
+}
+
+// createUser validates a registration and stores a plain account (no platform role).
+// Accounts made from an invitation (needNationality false) choose their nationality on first login.
+func createUser(ctx context.Context, repo output.UserRepository, req dto.RegisterDTO, needNationality bool) (*domain.User, error) {
 	if strings.TrimSpace(req.Name) == "" {
 		return nil, badRequest("NAME_IS_REQUIRED")
 	}
 	if err := validPassword(req.Password); err != nil {
 		return nil, err
 	}
-
-	exists, err := repo.ExistsByEmail(ctx, email)
+	email, phone, generated, err := identity(ctx, repo, 0, needNationality, req.Nationality, req.Phone, req.Email)
 	if err != nil {
 		return nil, err
-	}
-	if exists {
-		return nil, conflict("EMAIL_ALREADY_REGISTERED")
 	}
 
 	hash, err := utils.Encrypt(req.Password)
@@ -94,13 +139,15 @@ func createUser(ctx context.Context, repo output.UserRepository, req dto.Registe
 		return nil, err
 	}
 	user := &domain.User{
-		Email:        email,
-		Username:     email, // username is unique but accounts are identified by email only
-		Name:         strings.TrimSpace(req.Name),
-		Phone:        strings.TrimSpace(req.Phone),
-		PasswordHash: hash,
-		Status:       true,
-		LastActive:   time.Now(),
+		Email:          email,
+		Username:       email, // username is unique but accounts are identified by email or phone
+		Name:           strings.TrimSpace(req.Name),
+		Phone:          phone,
+		Nationality:    strings.ToUpper(strings.TrimSpace(req.Nationality)),
+		EmailGenerated: generated,
+		PasswordHash:   hash,
+		Status:         true,
+		LastActive:     time.Now(),
 	}
 	if err := repo.Create(ctx, user); err != nil {
 		return nil, err
@@ -108,10 +155,44 @@ func createUser(ctx context.Context, repo output.UserRepository, req dto.Registe
 	return user, nil
 }
 
+// UpdateProfile changes the logged-in person's name and contact details (same rules as registering)
+func (s *AuthServiceImpl) UpdateProfile(ctx context.Context, userID uint, req dto.ProfileRequest) (*dto.UserDTO, error) {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		return nil, badRequest("NAME_IS_REQUIRED")
+	}
+	email, phone, generated, err := identity(ctx, s.userRepo, user.ID, true, req.Nationality, req.Phone, req.Email)
+	if err != nil {
+		return nil, err
+	}
+	user.Name, user.Email, user.Username, user.Phone = strings.TrimSpace(req.Name), email, email, phone
+	user.Nationality, user.EmailGenerated = strings.ToUpper(strings.TrimSpace(req.Nationality)), generated
+	if err := s.userRepo.UpdateProfile(ctx, user); err != nil {
+		return nil, err
+	}
+	d := toUserDTO(user)
+	return &d, nil
+}
+
 func (s *AuthServiceImpl) Login(ctx context.Context, req dto.LoginDTO) (*dto.AuthResponseDTO, error) {
 	invalid := response.NewError(http.StatusUnauthorized, "INVALID_CREDENTIALS")
 
-	user, err := s.userRepo.FindByEmail(ctx, normalizeEmail(req.Email))
+	login := strings.TrimSpace(req.Login)
+	if login == "" {
+		login = req.Email
+	}
+	var user *domain.User
+	var err error
+	if strings.Contains(login, "@") {
+		user, err = s.userRepo.FindByEmail(ctx, normalizeEmail(login))
+	} else if phone, ok := domain.NormalizePhone(login); ok {
+		user, err = s.userRepo.FindByPhone(ctx, phone)
+	} else {
+		return nil, invalid
+	}
 	if err != nil {
 		if isNotFound(err) {
 			return nil, invalid
@@ -182,7 +263,7 @@ func (s *AuthServiceImpl) ForgotPassword(ctx context.Context, email string) erro
 		}
 		return err
 	}
-	if !user.Status {
+	if !user.Status || user.EmailGenerated { // no real address to send to: the page explains what to do
 		return nil
 	}
 	raw, hash, err := newToken()
@@ -238,16 +319,19 @@ func issueTokens(user *domain.User) (*dto.AuthResponseDTO, error) {
 
 func toUserDTO(u *domain.User) dto.UserDTO {
 	return dto.UserDTO{
-		ID:           u.ID,
-		Email:        u.Email,
-		Avatar:       u.Avatar,
-		Name:         u.Name,
-		Username:     u.Username,
-		Phone:        u.Phone,
-		PlatformRole: u.PlatformRole,
-		Status:       u.Status,
-		CreatedAt:    u.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:    u.UpdatedAt.Format(time.RFC3339),
+		ID:             u.ID,
+		Email:          u.Email,
+		Avatar:         u.Avatar,
+		Name:           u.Name,
+		Username:       u.Username,
+		Phone:          u.Phone,
+		PlatformRole:   u.PlatformRole,
+		Nationality:    u.Nationality,
+		EmailGenerated: u.EmailGenerated,
+		CustomerNo:     domain.FormatCustomerNo(u.ID),
+		Status:         u.Status,
+		CreatedAt:      u.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      u.UpdatedAt.Format(time.RFC3339),
 	}
 }
 

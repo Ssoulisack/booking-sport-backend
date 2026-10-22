@@ -89,6 +89,8 @@ type BookingDTO struct {
 	CustomerID       *uint            `json:"customer_id,omitempty"`
 	CustomerName     string           `json:"customer_name,omitempty"`
 	CustomerEmail    string           `json:"customer_email,omitempty"`
+	CustomerPhone    string           `json:"customer_phone,omitempty"`
+	CustomerNo       string           `json:"customer_no,omitempty"`
 	GuestName        string           `json:"guest_name,omitempty"`
 	GuestPhone       string           `json:"guest_phone,omitempty"`
 	PaymentMethod    string           `json:"payment_method,omitempty"`
@@ -129,7 +131,18 @@ type BookingQuery struct {
 // or for a walk-in (guest: name + phone)
 type StaffBookingRequest struct {
 	CreateBookingRequest
+	// customer finds an account by phone, customer number (C0042) or email; customer_email still works
+	Customer      string `json:"customer"`
 	CustomerEmail string `json:"customer_email"`
+}
+
+// CustomerMatchDTO is the account staff found, shown before they book for it
+type CustomerMatchDTO struct {
+	UserID     uint   `json:"user_id"`
+	CustomerNo string `json:"customer_no"`
+	Name       string `json:"name"`
+	Phone      string `json:"phone"`
+	Email      string `json:"email,omitempty"`
 }
 
 type StatusChangeRequest struct {
@@ -176,6 +189,7 @@ type CalendarDTO struct {
 
 type CustomerDTO struct {
 	UserID        uint      `json:"user_id"`
+	CustomerNo    string    `json:"customer_no"`
 	Name          string    `json:"name"`
 	Email         string    `json:"email"`
 	Phone         string    `json:"phone"`

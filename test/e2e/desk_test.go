@@ -81,6 +81,20 @@ func TestDeskAndReports(t *testing.T) {
 		return a.call("POST", m+"/bookings/"+id+"/payment", staff, map[string]any{"status": "paid", "method": method})
 	}
 
+	// --- staff free times: earlier today is offered to staff (not to customers), with prices ---
+	free := func(base, token string) reply {
+		return a.expect(200, "", "GET", fmt.Sprintf("%s/availability?date=%s&resource_id=%d", base, today.ymd(), court2), token, nil)
+	}
+	if staffFree := free(m, staff); !hasStart(staffFree, loc, "00:00") || staffFree.str("data.prices.0.price") != "200" {
+		t.Fatalf("staff availability: %v", staffFree.body["data"])
+	}
+	if hasStart(free(p, ""), loc, "00:00") {
+		t.Fatalf("customers must not be offered times that have passed")
+	}
+	if r := a.call("GET", fmt.Sprintf("%s/availability?date=%s&resource_id=%d", m, today.ymd(), court2), alice, nil); r.status != 404 {
+		t.Fatalf("a customer must not use the desk availability: %d %v", r.status, r.body)
+	}
+
 	// --- staff bookings: past hours of today are fine for staff, not for customers ---
 	w1 := staffBook(rentalFor(court1, today.at(0, 0), 60, map[string]any{"guest": walkIn}))
 	if w1.status != 201 || w1.str("data.status") != "confirmed" || w1.str("data.created_by") != "staff" || w1.str("data.guest_name") != "Somsak" {
