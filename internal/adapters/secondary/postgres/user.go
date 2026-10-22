@@ -46,7 +46,14 @@ func (r *userRepository) List(ctx context.Context, q output.ListQuery) ([]domain
 	tx := r.db.WithContext(ctx).Model(&domain.User{})
 	if q.Keyword != "" {
 		like := "%" + q.Keyword + "%"
-		tx = tx.Where("(name ILIKE ? OR email ILIKE ?)", like, like)
+		match := r.db.Where("name ILIKE ? OR email ILIKE ?", like, like)
+		if phone, ok := domain.NormalizePhone(q.Keyword); ok {
+			match = match.Or("phone = ?", phone)
+		}
+		if id, ok := domain.ParseCustomerNo(q.Keyword); ok {
+			match = match.Or("id = ?", id)
+		}
+		tx = tx.Where(match)
 	}
 	for column, value := range q.Filters {
 		tx = tx.Where(column+" = ?", value)
@@ -56,7 +63,7 @@ func (r *userRepository) List(ctx context.Context, q output.ListQuery) ([]domain
 		return nil, 0, exception.HandleGormError(err)
 	}
 	var users []domain.User
-	tx = tx.Order("id ASC")
+	tx = tx.Order("id DESC")
 	if q.Limit > 0 {
 		tx = tx.Offset((max(q.Page, 1) - 1) * q.Limit).Limit(q.Limit)
 	}

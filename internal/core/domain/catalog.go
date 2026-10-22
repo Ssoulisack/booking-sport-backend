@@ -19,6 +19,8 @@ type Sport struct {
 	Description string `gorm:"type:text"`
 	ImageKey    string `gorm:"type:varchar(255)"` // object key in file storage, never a full URL
 	Active      bool   `gorm:"not null;default:true"`
+	// Type is one of SportTypes: what customers filter places by
+	Type string `gorm:"type:varchar(30);not null;default:other;index"`
 }
 
 // Resource is a bookable place: a tennis court, a soccer pitch, a boxing ring

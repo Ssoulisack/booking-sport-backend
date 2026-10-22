@@ -9,6 +9,9 @@ import (
 
 // RunMigrations runs all database migrations using GORM
 func DatabaseMigrations(db *gorm.DB) error {
+	// phase 6f adds sports.type: existing sports get a type guessed from their name, once
+	sportTypeIsNew := !db.Migrator().HasColumn(&domain.Sport{}, "type")
+
 	// Add all domain and repository models here
 	if err := db.AutoMigrate(
 		&domain.User{},
@@ -43,6 +46,11 @@ func DatabaseMigrations(db *gorm.DB) error {
 	}
 	if err := phonesAsTwentyDigits(db); err != nil {
 		return err
+	}
+	if sportTypeIsNew {
+		if err := guessSportTypes(db); err != nil {
+			return err
+		}
 	}
 	// rule added in phase 3: give existing default rules a value so they stay complete
 	if err := db.Exec("UPDATE booking_rules SET max_active_bookings_per_customer = 3 WHERE scope_type = ? AND max_active_bookings_per_customer IS NULL",
@@ -162,5 +170,22 @@ func phonesAsTwentyDigits(db *gorm.DB) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// guessSportTypes (phase 6f) gives every existing sport a type from its name ("Tennis" → tennis,
+// "ບານເຕະ" → football); names that match nothing stay "other". Owners can change it in Setup.
+func guessSportTypes(db *gorm.DB) error {
+	var sports []domain.Sport
+	if err := db.Unscoped().Find(&sports).Error; err != nil {
+		return err
+	}
+	for _, sp := range sports {
+		t := domain.GuessSportType(sp.Name)
+		if err := db.Exec("UPDATE sports SET type = ? WHERE id = ?", t, sp.ID).Error; err != nil {
+			return err
+		}
+	}
+	log.Printf("sports: guessed a type for %d existing sports", len(sports))
 	return nil
 }

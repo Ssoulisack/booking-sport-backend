@@ -129,6 +129,8 @@ type AccessService interface {
 
 // PublicService serves a published business's booking page data
 type PublicService interface {
+	// Directory is the public list of places to play ("Find a place")
+	Directory(ctx context.Context, q dto.DirectoryQuery) (*dto.PagedResult[dto.DirectoryBusinessDTO], error)
 	Business(ctx context.Context, slug string) (*dto.PublicBusinessDTO, error)
 	Sports(ctx context.Context, slug string) ([]dto.SportDTO, error)
 	Resources(ctx context.Context, slug string, sportID uint) ([]dto.PublicResourceDTO, error)

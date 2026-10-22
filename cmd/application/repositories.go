@@ -27,6 +27,7 @@ type AppRepositories struct {
 	user           output.UserRepository
 	plans          output.PlanRepository
 	businesses     output.BusinessRepository
+	directory      output.DirectoryRepository
 	memberships    output.MembershipRepository
 	invitations    output.InvitationRepository
 	passwordResets output.PasswordResetRepository
@@ -83,6 +84,7 @@ func SetupRepositories(cfg *config.Config) *AppRepositories {
 		user:           postgres.NewUserRepository(db),
 		plans:          postgres.NewPlanRepository(db),
 		businesses:     postgres.NewBusinessRepository(db),
+		directory:      postgres.NewDirectoryRepository(db),
 		memberships:    postgres.NewMembershipRepository(db),
 		invitations:    postgres.NewInvitationRepository(db),
 		passwordResets: postgres.NewPasswordResetRepository(db),

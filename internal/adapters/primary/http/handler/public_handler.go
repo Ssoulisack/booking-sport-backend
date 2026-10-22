@@ -4,6 +4,7 @@ import (
 	"backend/internal/adapters/primary/http/middleware"
 	"backend/internal/core/dto"
 	"backend/internal/core/port/input"
+	"backend/pkg/response"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -20,6 +21,7 @@ type (
 
 	// PublicHandler serves a published business's booking page data to anyone
 	PublicHandler interface {
+		Directory(c *fiber.Ctx) error
 		Business(c *fiber.Ctx) error
 		Sports(c *fiber.Ctx) error
 		Resources(c *fiber.Ctx) error
@@ -55,6 +57,16 @@ func NewPublicHandler(svc input.PublicService) PublicHandler {
 }
 
 func sportIDQuery(c *fiber.Ctx) uint { return uint(max(c.QueryInt("sport_id", 0), 0)) }
+
+// Directory lists published places: ?keyword=&sport_type=&province=&page=&limit=
+func (h *publicHandler) Directory(c *fiber.Ctx) error {
+	var q dto.DirectoryQuery
+	if err := c.QueryParser(&q); err != nil {
+		return fail(c, response.ErrorBadRequest("INVALID_QUERY"))
+	}
+	res, err := h.svc.Directory(c.UserContext(), q)
+	return paged(c, res, err)
+}
 
 func (h *publicHandler) Business(c *fiber.Ctx) error {
 	res, err := h.svc.Business(c.UserContext(), c.Params("slug"))

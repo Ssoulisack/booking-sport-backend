@@ -64,3 +64,21 @@ func TestStandInEmail(t *testing.T) {
 		t.Error("ValidNationality")
 	}
 }
+
+func TestSportTypesAndProvinces(t *testing.T) {
+	for name, want := range map[string]string{
+		"Tennis": "tennis", "Table tennis": "table_tennis", "Court tennis VIP": "tennis", "Futsal 5v5": "futsal",
+		"Soccer": "football", "ບານເຕະ": "football", "ມວຍໄທ": "muay_thai", "Boxing": "boxing", "ແບດມິນຕັນ": "badminton",
+		"Swimming pool": "swimming", "Archery": "other",
+	} {
+		if got := domain.GuessSportType(name); got != want {
+			t.Errorf("GuessSportType(%q) = %s, want %s", name, got, want)
+		}
+	}
+	if !domain.ValidSportType("muay_thai") || domain.ValidSportType("quidditch") || domain.ValidSportType("") {
+		t.Error("ValidSportType")
+	}
+	if !domain.ValidProvince("") || !domain.ValidProvince("luang_prabang") || domain.ValidProvince("bangkok") || len(domain.Provinces) != 18 {
+		t.Error("provinces")
+	}
+}

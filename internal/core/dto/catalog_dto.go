@@ -30,6 +30,8 @@ type SportRequest struct {
 	Description string `json:"description"`
 	ImageKey    string `json:"image_key"`
 	Active      *bool  `json:"active"`
+	// Type is one of domain.SportTypes (empty: "other")
+	Type string `json:"type"`
 }
 
 type SportDTO struct {
@@ -40,6 +42,7 @@ type SportDTO struct {
 	ImageKey    string `json:"image_key"`
 	ImageURL    string `json:"image_url"`
 	Active      bool   `json:"active"`
+	Type        string `json:"type"`
 }
 
 type ResourceRequest struct {

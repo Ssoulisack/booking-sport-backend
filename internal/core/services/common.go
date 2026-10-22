@@ -92,8 +92,11 @@ func slugify(name, fallback string) string {
 	return slug
 }
 
+// reservedSlugs would clash with other public addresses (/public/businesses is the list of places)
+var reservedSlugs = map[string]bool{"businesses": true}
+
 func validSlug(slug string) bool {
-	return len(slug) >= 3 && len(slug) <= 60 && slugPattern.MatchString(slug)
+	return len(slug) >= 3 && len(slug) <= 60 && slugPattern.MatchString(slug) && !reservedSlugs[slug]
 }
 
 func conflict(code string) error { return response.NewError(http.StatusConflict, code) }

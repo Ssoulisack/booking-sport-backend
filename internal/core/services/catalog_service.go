@@ -49,7 +49,7 @@ var resourceKinds = map[string]bool{
 func (s *CatalogServiceImpl) toSportDTO(m domain.Sport) dto.SportDTO {
 	return dto.SportDTO{
 		ID: m.ID, Name: m.Name, Slug: m.Slug, Description: m.Description,
-		ImageKey: m.ImageKey, ImageURL: s.files.url(m.ImageKey), Active: m.Active,
+		ImageKey: m.ImageKey, ImageURL: s.files.url(m.ImageKey), Active: m.Active, Type: m.Type,
 	}
 }
 
@@ -57,6 +57,12 @@ func (s *CatalogServiceImpl) validateSport(ctx context.Context, businessID uint,
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		return badRequest("NAME_IS_REQUIRED")
+	}
+	if req.Type == "" {
+		req.Type = domain.SportTypeOther
+	}
+	if !domain.ValidSportType(req.Type) {
+		return badRequest("INVALID_SPORT_TYPE")
 	}
 	return s.files.requireOwned(ctx, businessID, req.ImageKey)
 }
@@ -78,7 +84,7 @@ func (s *CatalogServiceImpl) CreateSport(ctx context.Context, businessID uint, r
 	}
 	m := domain.Sport{
 		BusinessID: businessID, Name: req.Name, Slug: slug, Description: req.Description,
-		ImageKey: req.ImageKey, Active: isActive(req.Active),
+		ImageKey: req.ImageKey, Active: isActive(req.Active), Type: req.Type,
 	}
 	if err := s.sports.Create(ctx, &m); err != nil {
 		return nil, err
@@ -119,6 +125,7 @@ func (s *CatalogServiceImpl) UpdateSport(ctx context.Context, businessID, id uin
 	}
 	oldKey := m.ImageKey
 	m.Name, m.Description, m.ImageKey, m.Active = req.Name, req.Description, req.ImageKey, isActive(req.Active)
+	m.Type = req.Type
 	if err := s.sports.Update(ctx, m); err != nil {
 		return nil, err
 	}

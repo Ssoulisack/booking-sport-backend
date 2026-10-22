@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -83,6 +84,14 @@ func TestCustomerIdentity(t *testing.T) {
 	bk2 := a.expect(201, "", "POST", m+"/bookings", owner, map[string]any{"resource_id": court, "starts_at": day.at(11, 0), "duration_min": 60, "customer": keo.str("data.user.customer_no")})
 	if bk2.str("data.customer_email") != "" || strings.Contains(a.raw("GET", m+"/customers", owner), "no-email.invalid") {
 		t.Fatalf("stand-in email shown to staff: %v", bk2.body)
+	}
+
+	// --- the Super Admin finds them by phone (any spelling) or customer number, newest first ---
+	for _, q := range []string{"020 5512 7002", keo.str("data.user.customer_no")} {
+		found := a.expect(200, "", "GET", "/platform/users?keyword="+url.QueryEscape(q), admin, nil)
+		if found.str("data.0.id") != keo.str("data.user.id") {
+			t.Fatalf("user search %q: %v", q, found.body)
+		}
 	}
 
 	// --- the Super Admin sets a new password for someone without a real email ---

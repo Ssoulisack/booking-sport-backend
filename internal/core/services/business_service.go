@@ -72,7 +72,7 @@ func (s *BusinessServiceImpl) toSettingsDTO(b *domain.Business) *dto.SettingsDTO
 		SettingsRequest: dto.SettingsRequest{
 			Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Currency: b.Currency, Language: b.Language,
 			LogoKey: b.LogoKey, CoverKey: b.CoverKey, BrandColor: b.BrandColor, Description: b.Description,
-			Address: b.Address, Phone: b.Phone, MapURL: b.MapURL, SocialLinks: b.SocialLinks,
+			Address: b.Address, Province: b.Province, Phone: b.Phone, MapURL: b.MapURL, SocialLinks: b.SocialLinks,
 			BookingPolicy: b.BookingPolicy, BookingMode: b.BookingMode,
 			RequireApproval: b.RequireApproval,
 		},
@@ -105,6 +105,8 @@ func (s *BusinessServiceImpl) validateSettings(ctx context.Context, b *domain.Bu
 	switch {
 	case req.Name == "":
 		return badRequest("NAME_IS_REQUIRED")
+	case !domain.ValidProvince(req.Province):
+		return badRequest("INVALID_PROVINCE")
 	case !validCurrency(req.Currency):
 		return badRequest("INVALID_CURRENCY")
 	case !languages[req.Language]:
@@ -164,6 +166,7 @@ func (s *BusinessServiceImpl) UpdateSettings(ctx context.Context, businessID uin
 	b.Name, b.Slug, b.Timezone, b.Currency, b.Language = req.Name, req.Slug, req.Timezone, req.Currency, req.Language
 	b.LogoKey, b.CoverKey, b.BrandColor = req.LogoKey, req.CoverKey, req.BrandColor
 	b.Description, b.Address, b.Phone, b.MapURL = req.Description, strings.TrimSpace(req.Address), strings.TrimSpace(req.Phone), req.MapURL
+	b.Province = req.Province
 	b.SocialLinks, b.BookingPolicy, b.BookingMode = req.SocialLinks, req.BookingPolicy, req.BookingMode
 	b.RequireApproval = req.RequireApproval
 	if err := s.businesses.Update(ctx, b); err != nil {

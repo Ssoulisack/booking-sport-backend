@@ -6,11 +6,13 @@ import (
 	"backend/internal/core/port/input"
 	"backend/internal/core/port/output"
 	"context"
+	"strings"
 	"time"
 )
 
 type PublicServiceImpl struct {
 	businesses output.BusinessRepository
+	directory  output.DirectoryRepository
 	sports     output.SportRepository
 	resources  output.ResourceRepository
 	coaches    output.CoachRepository
@@ -23,6 +25,7 @@ type PublicServiceImpl struct {
 
 func NewPublicService(
 	businesses output.BusinessRepository,
+	directory output.DirectoryRepository,
 	sports output.SportRepository,
 	resources output.ResourceRepository,
 	coaches output.CoachRepository,
@@ -32,7 +35,7 @@ func NewPublicService(
 	storage output.FileStorage,
 ) input.PublicService {
 	return &PublicServiceImpl{
-		businesses: businesses, sports: sports, resources: resources, coaches: coaches, classes: classes, bookings: bookings,
+		businesses: businesses, directory: directory, sports: sports, resources: resources, coaches: coaches, classes: classes, bookings: bookings,
 		prices: prices, files: mediaFiles{storage: storage}, now: time.Now,
 	}
 }
@@ -68,7 +71,7 @@ func (s *PublicServiceImpl) Business(ctx context.Context, slug string) (*dto.Pub
 	return &dto.PublicBusinessDTO{
 		Name: b.Name, Slug: b.Slug, Timezone: b.Timezone, Currency: b.Currency, Language: b.Language,
 		LogoURL: s.files.url(b.LogoKey), CoverURL: s.files.url(b.CoverKey), BrandColor: b.BrandColor,
-		Description: b.Description, Address: b.Address, Phone: b.Phone, MapURL: b.MapURL,
+		Description: b.Description, Address: b.Address, Province: b.Province, Phone: b.Phone, MapURL: b.MapURL,
 		SocialLinks: b.SocialLinks, BookingPolicy: b.BookingPolicy, BookingMode: b.BookingMode,
 		RequireApproval: b.RequireApproval,
 	}, nil
@@ -86,7 +89,7 @@ func (s *PublicServiceImpl) Sports(ctx context.Context, slug string) ([]dto.Spor
 	return mapSlice(items, func(m domain.Sport) dto.SportDTO {
 		return dto.SportDTO{
 			ID: m.ID, Name: m.Name, Slug: m.Slug, Description: m.Description,
-			ImageKey: m.ImageKey, ImageURL: s.files.url(m.ImageKey), Active: m.Active,
+			ImageKey: m.ImageKey, ImageURL: s.files.url(m.ImageKey), Active: m.Active, Type: m.Type,
 		}
 	}), nil
 }
@@ -195,6 +198,46 @@ func (s *PublicServiceImpl) ClassSessions(ctx context.Context, slug string, q dt
 		d := toClassSessionDTO(c)
 		left := max(c.Capacity-taken[c.ID], 0)
 		d.SeatsLeft = &left
+		return d
+	}), nil
+}
+
+// Directory is the public list of places to play: published businesses, filtered by name or
+// address, sport type and province, each with its active sports and lowest court price
+func (s *PublicServiceImpl) Directory(ctx context.Context, q dto.DirectoryQuery) (*dto.PagedResult[dto.DirectoryBusinessDTO], error) {
+	if q.SportType != "" && !domain.ValidSportType(q.SportType) {
+		return nil, badRequest("INVALID_SPORT_TYPE")
+	}
+	if !domain.ValidProvince(q.Province) {
+		return nil, badRequest("INVALID_PROVINCE")
+	}
+	page, limit := normalizePage(dto.ListQuery{Page: q.Page, Limit: q.Limit})
+	items, total, err := s.directory.Businesses(ctx, output.DirectoryQuery{
+		Page: page, Limit: limit, Keyword: strings.TrimSpace(q.Keyword), SportType: q.SportType, Province: q.Province,
+	})
+	if err != nil {
+		return nil, err
+	}
+	ids := mapSlice(items, func(b domain.Business) uint { return b.ID })
+	sports, err := s.directory.ActiveSports(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	prices, err := s.directory.LowestCourtPrices(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	return pageOf(items, total, page, limit, func(b domain.Business) dto.DirectoryBusinessDTO {
+		d := dto.DirectoryBusinessDTO{
+			Name: b.Name, Slug: b.Slug, LogoURL: s.files.url(b.LogoKey), CoverURL: s.files.url(b.CoverKey),
+			BrandColor: b.BrandColor, Address: b.Address, Province: b.Province, Currency: b.Currency,
+			Sports: mapSlice(sports[b.ID], func(sp domain.Sport) dto.DirectorySport {
+				return dto.DirectorySport{Name: sp.Name, Type: sp.Type}
+			}),
+		}
+		if p, ok := prices[b.ID]; ok {
+			d.FromPrice, d.Currency = &p.PricePerHour, p.Currency
+		}
 		return d
 	}), nil
 }

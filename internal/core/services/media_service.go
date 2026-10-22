@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -35,6 +36,12 @@ func isValidMediaKey(businessID uint, key string) bool {
 	return m != nil && m[1] == strconv.FormatUint(uint64(businessID), 10)
 }
 
+// placeholderImages are outside demo pictures stored as a full link instead of an uploaded key
+// (e.g. https://placehold.co/600x400.png): shown as they are, accepted on save, never deleted
+const placeholderImages = "https://placehold.co/"
+
+func isPlaceholder(key string) bool { return strings.HasPrefix(key, placeholderImages) }
+
 // mediaFiles is shared by every service that stores an image key on a record
 type mediaFiles struct {
 	storage output.FileStorage
@@ -43,7 +50,7 @@ type mediaFiles struct {
 
 // requireOwned accepts "" (no image) or a key this business uploaded
 func (m mediaFiles) requireOwned(ctx context.Context, businessID uint, key string) error {
-	if key == "" {
+	if key == "" || isPlaceholder(key) {
 		return nil
 	}
 	if !isValidMediaKey(businessID, key) {
@@ -61,7 +68,7 @@ func (m mediaFiles) requireOwned(ctx context.Context, businessID uint, key strin
 
 // replaced deletes the old file after a successful save; a failure only leaves an orphan file
 func (m mediaFiles) replaced(ctx context.Context, businessID uint, oldKey, newKey string) {
-	if oldKey == "" || oldKey == newKey {
+	if oldKey == "" || oldKey == newKey || isPlaceholder(oldKey) {
 		return
 	}
 	if err := m.storage.Delete(ctx, oldKey); err != nil {
@@ -73,7 +80,12 @@ func (m mediaFiles) replaced(ctx context.Context, businessID uint, oldKey, newKe
 	}
 }
 
-func (m mediaFiles) url(key string) string { return m.storage.URL(key) }
+func (m mediaFiles) url(key string) string {
+	if isPlaceholder(key) {
+		return key
+	}
+	return m.storage.URL(key)
+}
 
 type MediaServiceImpl struct {
 	files  mediaFiles

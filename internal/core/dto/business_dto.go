@@ -58,6 +58,7 @@ type SettingsRequest struct {
 	BrandColor      string            `json:"brand_color"`
 	Description     string            `json:"description"`
 	Address         string            `json:"address"`
+	Province        string            `json:"province"` // one of domain.Provinces, or ""
 	Phone           string            `json:"phone"`
 	MapURL          string            `json:"map_url"`
 	SocialLinks     map[string]string `json:"social_links"`
@@ -178,6 +179,7 @@ type PublicBusinessDTO struct {
 	BrandColor      string            `json:"brand_color"`
 	Description     string            `json:"description"`
 	Address         string            `json:"address"`
+	Province        string            `json:"province"`
 	Phone           string            `json:"phone"`
 	MapURL          string            `json:"map_url"`
 	SocialLinks     map[string]string `json:"social_links"`
@@ -205,4 +207,33 @@ type PublicResourceDTO struct {
 	Kind         string `json:"kind"`
 	PricePerHour *int64 `json:"price_per_hour"` // nil: no price set yet
 	Currency     string `json:"currency,omitempty"`
+}
+
+// DirectoryBusinessDTO is one place in the public list ("Find a place to play")
+type DirectoryBusinessDTO struct {
+	Name       string           `json:"name"`
+	Slug       string           `json:"slug"`
+	LogoURL    string           `json:"logo_url"`
+	CoverURL   string           `json:"cover_url"`
+	BrandColor string           `json:"brand_color"`
+	Address    string           `json:"address"`
+	Province   string           `json:"province"`
+	Sports     []DirectorySport `json:"sports"` // active sports only
+	// FromPrice is the lowest hourly court price (nil: no court price set yet)
+	FromPrice *int64 `json:"from_price"`
+	Currency  string `json:"currency"`
+}
+
+type DirectorySport struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+// DirectoryQuery filters the public list; every field is optional
+type DirectoryQuery struct {
+	Page      int    `query:"page"`
+	Limit     int    `query:"limit"`
+	Keyword   string `query:"keyword"` // name or address
+	SportType string `query:"sport_type"`
+	Province  string `query:"province"`
 }

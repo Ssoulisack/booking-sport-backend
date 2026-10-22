@@ -92,6 +92,7 @@ type Business struct {
 	BrandColor    string            `gorm:"type:varchar(7)"`
 	Description   string            `gorm:"type:text"`
 	Address       string            `gorm:"type:varchar(255)"`
+	Province      string            `gorm:"type:varchar(40);index"` // one of Provinces, "" until chosen
 	Phone         string            `gorm:"type:varchar(30)"`
 	MapURL        string            `gorm:"type:varchar(500)"`
 	SocialLinks   map[string]string `gorm:"type:jsonb;serializer:json"`

@@ -38,6 +38,8 @@ func SetupPublicRoutes(
 	router.Get("/invitations/:token", invitations.Get)
 	router.Post("/invitations/:token/accept", middleware.RateLimit(10, 15*time.Minute), auth.OptionalUser, invitations.Accept)
 
+	router.Get("/public/businesses", public.Directory)
+
 	pub := router.Group("/public/:slug")
 	pub.Get("/", public.Business)
 	pub.Get("/sports", public.Sports)
