@@ -65,6 +65,8 @@ type Booking struct {
 	Business   Business `gorm:"foreignKey:BusinessID"`
 	Code       string   `gorm:"type:varchar(12);not null;uniqueIndex"` // short reference shown to people
 	SportID    uint     `gorm:"not null;default:0;index"`
+	// read-only, for names in answers; "-:migration" keeps it from adding a foreign key
+	Sport *Sport `gorm:"foreignKey:SportID;-:migration"`
 
 	CustomerID     *uint  `gorm:"index"` // nil for guests
 	Customer       *User  `gorm:"foreignKey:CustomerID"`
@@ -103,15 +105,19 @@ func (b Booking) IsActive() bool {
 type BookingItem struct {
 	ID             uint `gorm:"primaryKey"`
 	CreatedAt      time.Time
-	BookingID      *uint     `gorm:"index"` // nil for class holds
-	BusinessID     uint      `gorm:"not null;index"`
-	Kind           string    `gorm:"type:varchar(15);not null"`
-	ResourceID     *uint     `gorm:"index"`
-	CoachID        *uint     `gorm:"index"`
-	ClassSessionID *uint     `gorm:"index"`
-	Seats          int       `gorm:"not null;default:1"`
-	StartsAt       time.Time `gorm:"not null"`
-	EndsAt         time.Time `gorm:"not null"`
-	Price          int64     `gorm:"not null;default:0"`
-	Active         bool      `gorm:"not null;default:true"`
+	BookingID      *uint  `gorm:"index"` // nil for class holds
+	BusinessID     uint   `gorm:"not null;index"`
+	Kind           string `gorm:"type:varchar(15);not null"`
+	ResourceID     *uint  `gorm:"index"`
+	CoachID        *uint  `gorm:"index"`
+	ClassSessionID *uint  `gorm:"index"`
+	// read-only, for names in answers; "-:migration" keeps them from adding foreign keys
+	Resource     *Resource     `gorm:"foreignKey:ResourceID;-:migration"`
+	Coach        *Coach        `gorm:"foreignKey:CoachID;-:migration"`
+	ClassSession *ClassSession `gorm:"foreignKey:ClassSessionID;-:migration"`
+	Seats        int           `gorm:"not null;default:1"`
+	StartsAt     time.Time     `gorm:"not null"`
+	EndsAt       time.Time     `gorm:"not null"`
+	Price        int64         `gorm:"not null;default:0"`
+	Active       bool          `gorm:"not null;default:true"`
 }

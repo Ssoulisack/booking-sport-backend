@@ -25,7 +25,7 @@ func (r *bookingRepository) Create(ctx context.Context, b *domain.Booking) error
 	if b.BusinessID == 0 {
 		return errNoScope
 	}
-	return exception.HandleGormError(r.db.WithContext(ctx).Omit("Business", "Customer", "PaidBy").Create(b).Error)
+	return exception.HandleGormError(r.db.WithContext(ctx).Omit("Business", "Customer", "PaidBy", "Sport").Create(b).Error)
 }
 
 func (r *bookingRepository) CreateClassBooking(ctx context.Context, b *domain.Booking, classID uint, seats int) error {
@@ -48,13 +48,23 @@ func (r *bookingRepository) CreateClassBooking(ctx context.Context, b *domain.Bo
 		if taken+int64(seats) > int64(class.Capacity) {
 			return response.NewError(http.StatusConflict, "CLASS_FULL")
 		}
-		return tx.Omit("Business", "Customer", "PaidBy").Create(b).Error
+		return tx.Omit("Business", "Customer", "PaidBy", "Sport").Create(b).Error
 	})
 	return keepAppError(err)
 }
 
 func (r *bookingRepository) withDetails(ctx context.Context) *gorm.DB {
-	return r.db.WithContext(ctx).Preload("Items").Preload("Business").Preload("Customer").Preload("PaidBy")
+	return withNames(r.db.WithContext(ctx).Preload("Items").Preload("Business").Preload("Customer").Preload("PaidBy"))
+}
+
+// withNames loads what each booking is for (sport, court, coach, class) so answers can show names;
+// unscoped, so a court or coach deleted later still names its old bookings
+func withNames(tx *gorm.DB) *gorm.DB {
+	unscoped := func(db *gorm.DB) *gorm.DB { return db.Unscoped() }
+	return tx.Preload("Sport", unscoped).
+		Preload("Items.Resource", unscoped).
+		Preload("Items.Coach", unscoped).
+		Preload("Items.ClassSession", unscoped)
 }
 
 func (r *bookingRepository) GetByID(ctx context.Context, businessID, id uint) (*domain.Booking, error) {
@@ -91,7 +101,7 @@ func (r *bookingRepository) ListForCustomer(ctx context.Context, customerID uint
 		return nil, 0, exception.HandleGormError(err)
 	}
 	var items []domain.Booking
-	err := paginate(tx.Preload("Items").Preload("Business").Order("starts_at DESC"), q).Find(&items).Error
+	err := paginate(withNames(tx.Preload("Items").Preload("Business")).Order("starts_at DESC"), q).Find(&items).Error
 	return items, total, exception.HandleGormError(err)
 }
 
@@ -257,7 +267,7 @@ func (r *bookingRepository) List(ctx context.Context, businessID uint, f output.
 		return nil, 0, exception.HandleGormError(err)
 	}
 	var items []domain.Booking
-	err := paginate(tx.Preload("Items").Preload("Customer").Preload("PaidBy").Order("bookings.starts_at ASC, bookings.id ASC"), q).
+	err := paginate(withNames(tx.Preload("Items").Preload("Customer").Preload("PaidBy")).Order("bookings.starts_at ASC, bookings.id ASC"), q).
 		Find(&items).Error
 	return items, total, exception.HandleGormError(err)
 }

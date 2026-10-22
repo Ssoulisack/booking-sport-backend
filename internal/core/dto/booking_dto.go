@@ -24,6 +24,14 @@ type AvailabilityDTO struct {
 	Timezone string               `json:"timezone"`
 	Rule     domain.EffectiveRule `json:"rule"`
 	Slots    []SlotDTO            `json:"slots"`
+	// the price of each allowed length (court + coach together); empty when a price is not set yet
+	Currency string           `json:"currency,omitempty"`
+	Prices   []LengthPriceDTO `json:"prices"`
+}
+
+type LengthPriceDTO struct {
+	DurationMin int   `json:"duration_min"`
+	Price       int64 `json:"price"`
 }
 
 type GuestInfo struct {
@@ -55,6 +63,9 @@ type BookingItemDTO struct {
 	ResourceID     *uint     `json:"resource_id,omitempty"`
 	CoachID        *uint     `json:"coach_id,omitempty"`
 	ClassSessionID *uint     `json:"class_session_id,omitempty"`
+	ResourceName   string    `json:"resource_name,omitempty"`
+	CoachName      string    `json:"coach_name,omitempty"`
+	ClassTitle     string    `json:"class_title,omitempty"`
 	Seats          int       `json:"seats"`
 	StartsAt       time.Time `json:"starts_at"`
 	EndsAt         time.Time `json:"ends_at"`
@@ -65,6 +76,7 @@ type BookingDTO struct {
 	ID               uint             `json:"id"`
 	Code             string           `json:"code"`
 	SportID          uint             `json:"sport_id"`
+	SportName        string           `json:"sport_name"`
 	BusinessName     string           `json:"business_name"`
 	BusinessSlug     string           `json:"business_slug"`
 	Status           string           `json:"status"`

@@ -192,6 +192,36 @@ func TestBookingFlow(t *testing.T) {
 	if r := book(bob, both); r.status != 201 || r.str("data.total_price") != "350" || len(r.body["data"].(map[string]any)["items"].([]any)) != 2 {
 		t.Fatalf("coach + court: %d %v", r.status, r.body)
 	}
+	// --- prices before booking, names after: public courts and coaches show the hourly price, free times the
+	// exact price of each length (same as the booking total); bookings name the sport, court and coach ---
+	courts := a.expect(200, "", "GET", fmt.Sprintf("%s/resources?sport_id=%d", p, tennis), "", nil)
+	if courts.str("data.0.price_per_hour") != "200" || courts.str("data.0.currency") != "LAK" {
+		t.Fatalf("public court price: %v", courts.body)
+	}
+	if c := a.expect(200, "", "GET", p+"/coaches", "", nil); c.str("data.0.price_per_hour") != "150" {
+		t.Fatalf("public coach price: %v", c.body)
+	}
+	lengths := avail(fmt.Sprintf("&resource_id=%d&coach_id=%d", court1, coach))
+	if lengths.str("data.currency") != "LAK" || lengths.str("data.prices.0.duration_min") != "60" ||
+		lengths.str("data.prices.0.price") != "350" || lengths.str("data.prices.1.price") != "525" {
+		t.Fatalf("length prices (court 200 + coach 150 per hour): %v", lengths.body["data"])
+	}
+	bobs := a.expect(200, "", "GET", "/me/bookings", bob, nil)
+	var named bool
+	for _, b := range bobs.body["data"].([]any) {
+		bk := b.(map[string]any)
+		if bk["total_price"] != float64(350) {
+			continue
+		}
+		items := bk["items"].([]any)
+		names := []any{items[0].(map[string]any)["resource_name"], items[0].(map[string]any)["coach_name"],
+			items[1].(map[string]any)["resource_name"], items[1].(map[string]any)["coach_name"]}
+		named = bk["sport_name"] == "Tennis" && fmt.Sprint(names) == fmt.Sprint([]any{"Court 2", nil, nil, "Somchai"})
+	}
+	if !named {
+		t.Fatalf("my bookings should name sport, court and coach: %v", bobs.body["data"])
+	}
+
 	coachOnly := map[string]any{"coach_id": coach, "sport_id": tennis, "starts_at": day.at(14, 30), "duration_min": 60}
 	if r := book(alice, coachOnly); r.status != 409 || r.msg() != "SLOT_NOT_AVAILABLE" {
 		t.Fatalf("busy coach: %d %v", r.status, r.body)

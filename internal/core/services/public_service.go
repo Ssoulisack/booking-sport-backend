@@ -16,6 +16,7 @@ type PublicServiceImpl struct {
 	coaches    output.CoachRepository
 	classes    output.ClassSessionRepository
 	bookings   output.BookingRepository
+	prices     output.PriceRepository
 	files      mediaFiles
 	now        func() time.Time
 }
@@ -27,11 +28,12 @@ func NewPublicService(
 	coaches output.CoachRepository,
 	classes output.ClassSessionRepository,
 	bookings output.BookingRepository,
+	prices output.PriceRepository,
 	storage output.FileStorage,
 ) input.PublicService {
 	return &PublicServiceImpl{
 		businesses: businesses, sports: sports, resources: resources, coaches: coaches, classes: classes, bookings: bookings,
-		files: mediaFiles{storage: storage}, now: time.Now,
+		prices: prices, files: mediaFiles{storage: storage}, now: time.Now,
 	}
 }
 
@@ -89,7 +91,19 @@ func (s *PublicServiceImpl) Sports(ctx context.Context, slug string) ([]dto.Spor
 	}), nil
 }
 
-func (s *PublicServiceImpl) Resources(ctx context.Context, slug string, sportID uint) ([]dto.ResourceDTO, error) {
+// hourly is the owner's price per hour, or nil when none is set yet
+func (s *PublicServiceImpl) hourly(ctx context.Context, businessID uint, ownerType string, ownerID uint) (*int64, string, error) {
+	p, err := s.prices.GetByOwner(ctx, businessID, ownerType, ownerID)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	return &p.PricePerHour, p.Currency, nil
+}
+
+func (s *PublicServiceImpl) Resources(ctx context.Context, slug string, sportID uint) ([]dto.PublicResourceDTO, error) {
 	b, err := s.published(ctx, slug)
 	if err != nil {
 		return nil, err
@@ -102,7 +116,17 @@ func (s *PublicServiceImpl) Resources(ctx context.Context, slug string, sportID 
 	if err != nil {
 		return nil, err
 	}
-	return mapSlice(items, toResourceDTO), nil
+	out := make([]dto.PublicResourceDTO, 0, len(items))
+	for _, r := range items {
+		price, currency, err := s.hourly(ctx, b.ID, domain.OwnerResource, r.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, dto.PublicResourceDTO{
+			ID: r.ID, SportID: r.SportID, Name: r.Name, Kind: r.Kind, PricePerHour: price, Currency: currency,
+		})
+	}
+	return out, nil
 }
 
 func (s *PublicServiceImpl) Coaches(ctx context.Context, slug string, sportID uint) ([]dto.PublicCoachDTO, error) {
@@ -119,8 +143,13 @@ func (s *PublicServiceImpl) Coaches(ctx context.Context, slug string, sportID ui
 		if sportID != 0 && !teaches(c, sportID) {
 			continue
 		}
+		price, currency, err := s.hourly(ctx, b.ID, domain.OwnerCoach, c.ID)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, dto.PublicCoachDTO{
 			ID: c.ID, Name: c.Name, Bio: c.Bio, ImageURL: s.files.url(c.ImageKey), Sports: sportRefs(c.Sports),
+			PricePerHour: price, Currency: currency,
 		})
 	}
 	return out, nil

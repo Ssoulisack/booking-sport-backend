@@ -110,15 +110,22 @@ type reply struct {
 
 func (r reply) msg() string { s, _ := r.body["message"].(string); return s }
 
-// str reads a dotted path from the body, e.g. "data.user.email"
+// str reads a dotted path from the body, e.g. "data.user.email"; a number picks a list item ("data.0.id")
 func (r reply) str(path string) string {
 	var cur any = r.body
 	for _, key := range strings.Split(path, ".") {
-		m, ok := cur.(map[string]any)
-		if !ok {
+		switch c := cur.(type) {
+		case map[string]any:
+			cur = c[key]
+		case []any:
+			i, err := strconv.Atoi(key)
+			if err != nil || i < 0 || i >= len(c) {
+				return ""
+			}
+			cur = c[i]
+		default:
 			return ""
 		}
-		cur = m[key]
 	}
 	switch v := cur.(type) {
 	case string:

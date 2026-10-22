@@ -129,7 +129,7 @@ type AccessService interface {
 type PublicService interface {
 	Business(ctx context.Context, slug string) (*dto.PublicBusinessDTO, error)
 	Sports(ctx context.Context, slug string) ([]dto.SportDTO, error)
-	Resources(ctx context.Context, slug string, sportID uint) ([]dto.ResourceDTO, error)
+	Resources(ctx context.Context, slug string, sportID uint) ([]dto.PublicResourceDTO, error)
 	Coaches(ctx context.Context, slug string, sportID uint) ([]dto.PublicCoachDTO, error)
 	ClassSessions(ctx context.Context, slug string, q dto.ListQuery) (*dto.PagedResult[dto.ClassSessionDTO], error)
 }

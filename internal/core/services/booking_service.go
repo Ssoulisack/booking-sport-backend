@@ -267,12 +267,62 @@ func (s *BookingServiceImpl) Availability(ctx context.Context, slug string, q dt
 	if err != nil {
 		return nil, err
 	}
+	currency, prices, err := s.lengthPrices(ctx, b.ID, t, rule)
+	if err != nil {
+		return nil, err
+	}
 	return &dto.AvailabilityDTO{
 		Date: q.Date, Timezone: loc.String(), Rule: *rule,
 		Slots: mapSlice(slots, func(sl domain.Slot) dto.SlotDTO {
 			return dto.SlotDTO{StartsAt: sl.StartsAt.In(loc), Durations: sl.Durations}
 		}),
+		Currency: currency, Prices: prices,
 	}, nil
+}
+
+// lengthPrices is what each allowed length costs, worked out exactly as a booking's total
+// (court and coach each rounded, then added). Empty when a price is missing or the currencies differ:
+// booking then answers PRICE_NOT_SET / PRICE_CURRENCY_MISMATCH.
+func (s *BookingServiceImpl) lengthPrices(ctx context.Context, businessID uint, t *target, rule *domain.EffectiveRule) (string, []dto.LengthPriceDTO, error) {
+	prices := []dto.LengthPriceDTO{}
+	var rates []int64
+	currency := ""
+	type owner struct {
+		kind string
+		id   uint
+	}
+	var owners []owner
+	if t.resource != nil {
+		owners = append(owners, owner{domain.OwnerResource, t.resource.ID})
+	}
+	if t.coach != nil {
+		owners = append(owners, owner{domain.OwnerCoach, t.coach.ID})
+	}
+	for _, o := range owners {
+		p, err := s.prices.GetByOwner(ctx, businessID, o.kind, o.id)
+		if err != nil {
+			if isNotFound(err) {
+				return "", prices, nil
+			}
+			return "", nil, err
+		}
+		if currency != "" && currency != p.Currency {
+			return "", prices, nil
+		}
+		currency = p.Currency
+		rates = append(rates, p.PricePerHour)
+	}
+	if rule.DurationStepMin <= 0 {
+		return currency, prices, nil
+	}
+	for d := rule.MinDurationMin; d <= rule.MaxDurationMin; d += rule.DurationStepMin {
+		var total int64
+		for _, r := range rates {
+			total += domain.PriceFor(r, d)
+		}
+		prices = append(prices, dto.LengthPriceDTO{DurationMin: d, Price: total})
+	}
+	return currency, prices, nil
 }
 
 // ---------- creating ----------
@@ -432,6 +482,10 @@ func (s *BookingServiceImpl) Create(ctx context.Context, slug string, actor *dom
 		return nil, err
 	}
 
+	// read it back so the answer names the court, coach or class
+	if full, err := s.bookings.GetByID(ctx, b.ID, bk.ID); err == nil {
+		bk = full
+	}
 	bk.Business = *b
 	out := &dto.CreatedBookingDTO{BookingDTO: toBookingDTO(*bk)}
 	if rawToken != "" {
@@ -594,11 +648,24 @@ func toBookingDTO(b domain.Booking) dto.BookingDTO {
 		CreatedByType: b.CreatedByType,
 		Notes:         b.Notes, CancelledAt: b.CancelledAt, CancelReason: b.CancelReason, CreatedAt: b.CreatedAt,
 		Items: mapSlice(b.Items, func(i domain.BookingItem) dto.BookingItemDTO {
-			return dto.BookingItemDTO{
+			item := dto.BookingItemDTO{
 				Kind: i.Kind, ResourceID: i.ResourceID, CoachID: i.CoachID, ClassSessionID: i.ClassSessionID,
 				Seats: i.Seats, StartsAt: i.StartsAt, EndsAt: i.EndsAt, Price: i.Price,
 			}
+			if i.Resource != nil {
+				item.ResourceName = i.Resource.Name
+			}
+			if i.Coach != nil {
+				item.CoachName = i.Coach.Name
+			}
+			if i.ClassSession != nil {
+				item.ClassTitle = i.ClassSession.Title
+			}
+			return item
 		}),
+	}
+	if b.Sport != nil {
+		d.SportName = b.Sport.Name
 	}
 	if b.Customer != nil {
 		d.CustomerName, d.CustomerEmail = b.Customer.Name, b.Customer.Email

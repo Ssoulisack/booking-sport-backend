@@ -188,9 +188,21 @@ type PublicBusinessDTO struct {
 
 // PublicCoachDTO leaves out the coach's private phone number
 type PublicCoachDTO struct {
-	ID       uint          `json:"id"`
-	Name     string        `json:"name"`
-	Bio      string        `json:"bio"`
-	ImageURL string        `json:"image_url"`
-	Sports   []SportRefDTO `json:"sports"`
+	ID           uint          `json:"id"`
+	Name         string        `json:"name"`
+	Bio          string        `json:"bio"`
+	ImageURL     string        `json:"image_url"`
+	Sports       []SportRefDTO `json:"sports"`
+	PricePerHour *int64        `json:"price_per_hour"` // nil: no price set yet
+	Currency     string        `json:"currency,omitempty"`
+}
+
+// PublicResourceDTO is a bookable court / pitch / ring as customers see it, with its hourly price
+type PublicResourceDTO struct {
+	ID           uint   `json:"id"`
+	SportID      uint   `json:"sport_id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	PricePerHour *int64 `json:"price_per_hour"` // nil: no price set yet
+	Currency     string `json:"currency,omitempty"`
 }
